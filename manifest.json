@@ -1,0 +1,10 @@
+{
+  "name": "BedrockInsight",
+  "entry": "BedrockInsight.dll",
+  "type": "native",
+  "platform": "server",
+  "version": "0.1.0",
+  "description": "Capture-only analytics and audit; HTTP and rollback disabled",
+  "dependencies": [],
+  "extraInfo": {"requiredLeviLamina": "26.60.0"}
+}

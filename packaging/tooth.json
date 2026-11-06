@@ -1,0 +1,47 @@
+{
+  "format_version": 3,
+  "format_uuid": "289f771f-2c9a-4d73-9f3f-8492495a924d",
+  "tooth": "local/BedrockInsight",
+  "version": "0.1.0",
+  "info": {
+    "name": "BedrockInsight",
+    "description": "Server-side Bedrock analytics and audit mod",
+    "tags": ["platform:levilamina", "type:mod"]
+  },
+  "variants": [
+    {
+      "label": "server",
+      "platform": "win-x64",
+      "dependencies": {
+        "github.com/LiteLDev/LeviLamina": "26.60.0"
+      },
+      "assets": [
+        {
+          "type": "zip",
+          "urls": [
+            "https://{{tooth}}/releases/download/v{{version}}/BedrockInsight-v{{version}}-server-windows-x64.zip"
+          ],
+          "placements": [
+            {
+              "type": "dir",
+              "src": "BedrockInsight/",
+              "dest": "mods/BedrockInsight/"
+            }
+          ]
+        }
+      ],
+      "preserve_files": [],
+      "remove_files": [],
+      "scripts": {
+        "pre_install": [],
+        "install": [],
+        "post_install": [],
+        "pre_pack": [],
+        "post_pack": [],
+        "pre_uninstall": [],
+        "uninstall": [],
+        "post_uninstall": []
+      }
+    }
+  ]
+}

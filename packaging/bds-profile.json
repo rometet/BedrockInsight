@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "levilamina_version": "26.60.0",
+  "levilamina_commit": "072b9ffe0e9d9e0ec846f11d294880e892fe7770",
+  "header_catalog_sha256": "1ae4dd1e4f54f7da1c9d8a88e29f0897109f052f91f2ef12d2c1ff9da76c5823",
+  "bds_version": "1.26.60.6",
+  "preloader_version": "1.16.7",
+  "mod_destination": "mods/BedrockInsight/",
+  "sdk_dependencies": {
+    "bedrockdata": "v26.60.6-server.5",
+    "prelink": "v0.8.8"
+  },
+  "public_defines": ["ENTT_PACKED_PAGE=128", "ENTT_SPARSE_PAGE=4096"],
+  "sources": {
+    "release": "https://github.com/LiteLDev/LeviLamina/releases/tag/v26.60.0",
+    "tooth": "https://github.com/LiteLDev/LeviLamina/blob/072b9ffe0e9d9e0ec846f11d294880e892fe7770/tooth.json",
+    "tooth_git_blob": "55d4a87b48cd628e5f199a03e5a9cf21ecaa20c3",
+    "xmake_recipe": "https://github.com/LiteLDev/xmake-repo/blob/main/packages/l/levilamina/versions/26_60_0.lua",
+    "xmake_recipe_git_blob": "af46571d7a4456b3f818645e675f54e36d629041",
+    "bedrockdata_recipe_git_blob": "f89a94bd3a84ac75a09b61646771da30a182855a",
+    "bds_tooth": "https://github.com/LiteLDev/bds/blob/v1.26.60/tooth.json",
+    "bds_tooth_git_blob": "a5b13756ef917bf009574bf9f75b84d2afe34794"
+  },
+  "downloads": [
+    {
+      "name": "levilamina-v26.60.0-server-release-windows-x64.zip",
+      "url": "https://github.com/LiteLDev/LeviLamina/releases/download/v26.60.0/levilamina-v26.60.0-server-release-windows-x64.zip",
+      "size": 12353484,
+      "sha256": "392c567b8c86b9e1739939b578e0fefa2a758c6019d195644f868711c44101dc"
+    },
+    {
+      "name": "bedrock-runtime-data-v26.60.6-server.5-windows-x64.zip",
+      "url": "https://github.com/LiteLDev/bedrock-runtime-data/releases/download/v26.60.6-server.5/bedrock-runtime-data-v26.60.6-server.5-windows-x64.zip",
+      "size": 36287702,
+      "sha256": "a5bc3bd3e0d845e3a6e6776b633bbd7d4c14f7a45e7e7f191fbdfa3c73c200fe"
+    }
+  ],
+  "server_ci_artifact": {
+    "run_id": 41641646298,
+    "artifact_id": 13233696219,
+    "sha256": "44d749711d35d71c0ead9a8ec38a877c865702e22000ec051bd916bb9ba370f2"
+  }
+}

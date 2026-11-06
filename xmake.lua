@@ -1,0 +1,112 @@
+add_rules("mode.debug", "mode.release")
+
+option("with_levilamina")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Build the optional server mod target against the pinned LeviLamina package")
+option_end()
+
+option("levimc_repo")
+    set_default("")
+    set_showmenu(true)
+    set_description("Optional local levimc-repo path for the LeviLamina package")
+option_end()
+
+set_project("BedrockInsight")
+set_version("0.1.0")
+set_languages("c++20")
+set_warnings("all")
+set_runtimes("MD")
+add_defines("NOMINMAX")
+
+option("target_type")
+    set_default("server")
+    set_values("server")
+option_end()
+
+add_requires("sqlite3")
+
+target("bedrock_insight_core")
+    set_kind("static")
+    add_files("src/bedrock_insight/core/api_payload.cpp", "src/bedrock_insight/core/api_json.cpp", "src/bedrock_insight/core/admin_api.cpp", "src/bedrock_insight/core/analytics_query.cpp", "src/bedrock_insight/core/dashboard.cpp", "src/bedrock_insight/core/event.cpp", "src/bedrock_insight/core/http_server.cpp", "src/bedrock_insight/core/http_transport.cpp", "src/bedrock_insight/core/json.cpp", "src/bedrock_insight/core/metrics.cpp", "src/bedrock_insight/core/rollback.cpp", "src/bedrock_insight/core/sqlite_api.cpp", "src/bedrock_insight/core/stats_reader.cpp", "src/bedrock_insight/core/remote_api.cpp", "src/bedrock_insight/core/storage.cpp")
+    add_includedirs("src", {public = true})
+    add_packages("sqlite3", {public = true})
+    if is_plat("windows") then
+        add_syslinks("ws2_32")
+    end
+target_end()
+
+target("BedrockInsightCoreTests")
+    set_kind("binary")
+    add_files("tests/core_tests.cpp")
+    add_deps("bedrock_insight_core")
+    add_includedirs("src")
+    add_packages("sqlite3")
+    add_defines("BEDROCKINSIGHT_TESTING")
+    add_tests("default")
+target_end()
+
+target("ParityObservationTests")
+    set_kind("binary")
+    add_files("tests/parity_observation_tests.cpp")
+    add_includedirs("src")
+    add_tests("default")
+target_end()
+
+target("StatsReaderTests")
+    set_kind("binary")
+    add_files("tests/stats_reader_tests.cpp")
+    add_includedirs("src")
+    add_packages("sqlite3")
+    add_tests("default")
+target_end()
+
+target("RemoteApiTests")
+    set_kind("binary")
+    add_files("tests/remote_api_tests.cpp")
+    add_includedirs("src")
+    add_packages("sqlite3")
+    add_tests("default")
+target_end()
+
+if has_config("with_levilamina") then
+    local levimc_repo = get_config("levimc_repo")
+    if levimc_repo ~= nil and levimc_repo ~= "" then
+        add_repositories("levimc-repo " .. levimc_repo)
+    end
+    add_requires("levilamina 26.60.0", {configs = {target_type = "server"}})
+    add_requires("levibuildscript 0.6.1")
+
+    target("BedrockInsight")
+        set_kind("shared")
+        set_toolchains("clang-cl")
+        set_default(false)
+        set_basename("BedrockInsight")
+        add_rules("@levibuildscript/linkrule")
+        add_rules("@levibuildscript/modpacker", {modVersion = "0.1.0", modPlatform = "server"})
+        add_files("src/bedrock_insight/levilamina/mod.cpp")
+        add_files("src/bedrock_insight/levilamina/runtime.cpp")
+        add_files("src/bedrock_insight/levilamina/busy_tick.cpp")
+        add_files("src/bedrock_insight/levilamina/player_actions.cpp")
+        add_files("src/bedrock_insight/levilamina/player_death.cpp")
+        add_files("src/bedrock_insight/levilamina/player_modes.cpp")
+        add_files("src/bedrock_insight/levilamina/player_pickup.cpp")
+        add_files("src/bedrock_insight/levilamina/player_jump.cpp")
+        add_files("src/bedrock_insight/levilamina/player_kills.cpp")
+        add_files("src/bedrock_insight/levilamina/player_use.cpp")
+        add_files("src/bedrock_insight/levilamina/player_hurt.cpp")
+        add_files("src/bedrock_insight/levilamina/player_block.cpp")
+        add_files("src/bedrock_insight/levilamina/player_travel.cpp")
+        add_files("src/bedrock_insight/levilamina/player_block_interaction.cpp")
+        add_files("src/bedrock_insight/levilamina/player_damage.cpp")
+        add_files("src/bedrock_insight/levilamina/player_craft.cpp")
+        add_files("src/bedrock_insight/levilamina/stats_command.cpp")
+        add_includedirs("src")
+        add_packages("levilamina", "sqlite3")
+        add_files("src/bedrock_insight/core/admin_api.cpp", "src/bedrock_insight/core/event.cpp", "src/bedrock_insight/core/rollback.cpp", "src/bedrock_insight/core/sqlite_api.cpp", "src/bedrock_insight/core/storage.cpp", "src/bedrock_insight/core/stats_reader.cpp", "src/bedrock_insight/core/remote_api.cpp")
+        if is_plat("windows") then
+            add_syslinks("ws2_32")
+        end
+    target_end()
+end
+

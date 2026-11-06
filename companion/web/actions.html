@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BedrockInsight — 行動の観測</title><link rel="stylesheet" href="/styles.css"></head>
+<body><main>
+<header><div><p class="eyebrow">BEDROCKINSIGHT · READ-ONLY</p><h1>行動の観測記録</h1>
+<p class="muted">成功戻り値・試行・処理前通知を区別。収集前の履歴を0にしません。</p>
+<a href="/">プレイ時間・ブロック試行・TPS / MSPTの画面へ</a></div><span class="badge">閲覧専用</span></header>
+<p><a href="/stats">全9分類・CUSTOM77項目の検索／比較画面へ</a></p>
+<section class="panel"><h2>この別プロセスの閲覧認証</h2><form id="a-login"><label>起動端末のランダム閲覧トークン
+<input id="a-token" type="password" autocomplete="off" required></label><button>接続</button>
+<button id="a-logout" type="button" class="secondary">表示を消去</button></form>
+<p class="muted">18767番は更新しません。新しく起動した別ポートのコンパニオン用です。</p></section>
+<p id="a-error" role="alert"></p>
+<section class="panel filters"><label>期間<select id="a-period"><option value="day">日別</option><option value="month">月別</option><option value="all" selected>全期間</option></select></label>
+<label>JSTの日付 / 月<input id="a-date" type="date"></label><button id="a-refresh">更新</button><p id="a-period-label" class="muted">認証後に表示</p></section>
+<div class="columns"><section class="panel"><h2>プレイヤー別</h2><label>プレイヤー<select id="a-player"><option value="">全プレイヤー</option></select></label>
+<div class="pager"><button id="a-players-prev" class="secondary">前の100人</button><span id="a-players-page">1</span><button id="a-players-next" class="secondary">次の100人</button></div>
+<dl id="a-profile"></dl><p id="a-definition" class="muted">投棄の個数は入口スタックの数。インベントリ差分・生成物の永続化は未検証。</p>
+<p id="a-observed" class="muted"></p><p class="muted">全拾得数・永続転送・空中移動が完了したジャンプ数・スプリント/スニーク継続時間・飛び道具や間接攻撃等のキラー帰属・クラフト・移動距離・使用効果の完了・消費成功・破損成立は未計測。加速や主所持品差分・直接攻撃source・フラグ・true応答の観測と、全操作の成功・ワールド保存は区別します。</p></section>
+<section class="panel"><h2>保存された行動のランキング</h2><label>指標<select id="a-metric">
+<option value="dropped_items">投棄 true 戻り値・入口個数</option><option value="drop_actions">投棄 true 戻り値の回数</option>
+<option value="pickup_inventory_items">拾得処理中・主所持品の増加個数</option><option value="pickup_delta_actions">拾得処理中・所持数増加の観測回数</option>
+<option value="jump_impulses">ジャンプ処理の上向き加速観測</option>
+<option value="use_return_actions">使用処理true応答・所持品照合済み</option><option value="use_inventory_loss">使用true応答中・主所持品の減少個数</option>
+<option value="hurt_slot_losses">耐久処理true応答・主所持品スロットの1個消失</option>
+<option value="mined_blocks">ブロック採掘の成功（種類別）</option><option value="mined_block_actions">ブロック採掘成功の観測回数</option>
+<option value="placed_blocks">ブロック設置の成功（種類別）</option><option value="placed_block_actions">ブロック設置成功の観測回数</option>
+<option value="crafted_items">クラフト成立アイテム数</option><option value="craft_actions">クラフト成立の回数</option>
+<option value="travel_cm">移動距離（cm）</option><option value="interactions">ブロック相互作用</option>
+<option value="damage_taken_tenths">受けたダメージ（1/10）</option><option value="damage_dealt_actions">攻撃行動の観測回数</option>
+<option value="direct_kills">直接攻撃の死亡フラグ成立観測</option><option value="direct_mob_kills">直接攻撃・Mob死亡フラグ</option><option value="direct_player_kills">直接攻撃・プレイヤー死亡フラグ</option>
+<option value="death_notifications">死亡処理通知（処理前）</option><option value="confirmed_deaths">死亡フラグ成立（処理後）</option><option value="item_use_attempts">アイテム使用試行</option>
+<option value="killed_by_entities">死亡元エンティティ解決済み観測</option>
+<option value="projectile_kills">子飛び道具・所有者解決済み死亡観測</option>
+<option value="sprint_starts">スプリント開始フラグ観測</option><option value="sprint_stops">スプリント終了フラグ観測</option><option value="sneak_starts">スニーク開始フラグ観測</option><option value="sneak_stops">スニーク終了フラグ観測</option></select></label>
+<p class="muted">死亡フラグ成立は処理前の通知とは別の観測です。</p>
+<ol id="a-rankings"></ol><div class="pager"><button id="a-prev" class="secondary">前へ</button><span id="a-page">1</span><button id="a-next" class="secondary">次へ</button></div>
+<p class="muted">正の記録のみ、値→名前→内部IDの固定順。全プレイヤー対象の順位です。</p></section></div>
+<section class="panel"><h2>アイテム種類別の投棄観測（上位100種類）</h2><ol id="a-types"></ol>
+<p id="a-source" class="muted"></p></section>
+<section class="panel"><h2>拾得処理中の主所持品増加（上位100種類）</h2><ol id="a-pickups"></ol>
+<p id="a-pickup-definition" class="muted">入口個数や処理前通知を拾得個数にはしません。</p>
+<p id="a-pickup-observed" class="muted"></p></section>
+<section class="panel"><h2>ジャンプ処理の上向き加速観測</h2><p id="a-jump-count">認証後に表示</p>
+<p id="a-jump-definition" class="muted">入力通知数や空中移動完了数とは区別します。</p>
+<p id="a-jump-observed" class="muted"></p></section>
+<section class="panel"><h2>直接攻撃の死亡フラグ成立・被害者種類別（上位100）</h2><ol id="a-kills"></ol>
+<p id="a-kill-definition" class="muted">処理前通知をキルにせず、不明なキラーは推測しません。</p>
+<p id="a-kill-observed" class="muted"></p></section>
+<section class="panel"><h2>子飛び道具・Player所有者解決済みの死亡観測（上位100）</h2><ol id="a-projectile-kills"></ol>
+<p id="a-projectile-definition" class="muted">直接攻撃とは別。認証後に読み込みます。</p></section>
+<section class="panel"><h2>使用処理true応答・種類／手別（上位100）</h2><ol id="a-use-results"></ol>
+<p id="a-use-definition" class="muted">使用試行・true応答と効果完了・消費成功は区別します。</p>
+<p id="a-use-observed" class="muted"></p></section>
+<section class="panel"><h2>耐久処理中の主所持品スロット消失・種類別（上位100）</h2><ol id="a-hurt-slots"></ol>
+<p id="a-hurt-definition" class="muted">破損成立・全破損数・永続保存の証明ではありません。</p>
+<p id="a-hurt-observed" class="muted"></p></section>
+<section class="panel"><h2>成功したブロック採掘・種類別（上位100）</h2><ol id="a-mined"></ol>
+<p id="a-mined-definition" class="muted">処理前の試行や同座標の再設置を成功にしません。</p>
+<p id="a-mined-observed" class="muted"></p></section>
+<section class="panel"><h2>成功したブロック設置・種類別（上位100）</h2><ol id="a-placed"></ol>
+<p id="a-placed-definition" class="muted">同型のまま・空気・失敗は数えません。複数ブロック設置は主要座標の1個のみです。</p>
+<p id="a-placed-observed" class="muted"></p></section>
+<section class="panel"><h2>クラフト成立・移動距離・ブロック相互作用・ダメージ</h2>
+<ol id="a-crafted"></ol><p id="a-crafted-definition" class="muted">失敗した転送や試行はクラフトにしません。</p>
+<ol id="a-travel"></ol><p id="a-travel-definition" class="muted">移動モード別の毎tick差分合計。全移動距離の証明ではありません。</p>
+<ol id="a-interactions"></ol><p id="a-interaction-definition" class="muted">相互作用の成功やUI完了は保証しません。</p>
+<p id="a-damage">認証後に表示</p><p id="a-damage-definition" class="muted">被ダメージは処理前量、与ダメージは攻撃行動のみです。</p>
+<p id="a-damage-observed" class="muted"></p></section>
+<section class="panel"><h2>死亡フラグ成立・入口の原因別</h2><ol id="a-deaths"></ol>
+<p id="a-death-definition" class="muted">認証後に読み込みます。キラー帰属ではありません。</p>
+<p id="a-death-observed" class="muted"></p></section>
+<section class="panel"><h2>死亡元エンティティ・種類／経路別（上位100）</h2><ol id="a-killed-by"></ol>
+<p id="a-killed-by-definition" class="muted">原因コードとは別。認証後に読み込みます。</p>
+<p id="a-killed-by-observed" class="muted"></p></section>
+<section class="panel"><h2>スプリント／スニークのフラグ観測</h2><ol id="a-modes"></ol>
+<p id="a-mode-definition" class="muted">処理前通知そのものや、継続時間は数えません。</p>
+<p id="a-mode-observed" class="muted"></p></section>
+<footer><p id="a-note">未認証。集計はJST / UTC epoch保存、SQLite読み取り専用。Mod内HTTP・rollbackは無効。</p>
+<p>自動更新30秒。トークンはメモリ内のみ。他の画面では再入力します。</p></footer>
+</main><script src="/actions.js"></script></body></html>

@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "provenance": "OFFICIAL_INPUTS.md: coordinator compared archive digests with upstream release/recipe digests; staging independently hashes local bytes",
+  "archives": [
+    {
+      "id": "levilamina", "version": "26.60.0",
+      "name": "levilamina-v26.60.0-server-release-windows-x64.zip",
+      "size": 12353484,
+      "sha256": "392c567b8c86b9e1739939b578e0fefa2a758c6019d195644f868711c44101dc",
+      "url": "https://github.com/LiteLDev/LeviLamina/releases/download/v26.60.0/levilamina-v26.60.0-server-release-windows-x64.zip",
+      "files": ["LeviLamina/LeviLamina.dll", "LeviLamina/manifest.json", "COPYING", "COPYING.LESSER", "README.md"]
+    },
+    {
+      "id": "bedrockdata", "version": "v26.60.6-server.5",
+      "name": "bedrock-runtime-data-v26.60.6-server.5-windows-x64.zip",
+      "size": 36287702,
+      "sha256": "a5bc3bd3e0d845e3a6e6776b633bbd7d4c14f7a45e7e7f191fbdfa3c73c200fe",
+      "url": "https://github.com/LiteLDev/bedrock-runtime-data/releases/download/v26.60.6-server.5/bedrock-runtime-data-v26.60.6-server.5-windows-x64.zip",
+      "files": ["bedrock_runtime_data"]
+    },
+    {
+      "id": "prelink", "version": "v0.8.8",
+      "name": "prelink-v0.8.8-windows-x64.zip",
+      "size": 6245036,
+      "sha256": "046811a5d1f8bdd0c1e74afdd3e0a2d778df03568c06c835424b2c821896e39c",
+      "url": "https://github.com/LiteLDev/prelink-release/releases/download/v0.8.8/prelink-v0.8.8-windows-x64.zip",
+      "files": ["prelink.exe"]
+    },
+    {
+      "id": "preloader", "version": "1.16.7",
+      "name": "preloader-v1.16.7-windows-x64.zip",
+      "size": 3825242,
+      "sha256": "9f5c605f3d30b3e01b0facc289833e8dc2d43289bb5661f4201a5c076dea0678",
+      "url": "https://github.com/LiteLDev/PreLoader/releases/download/v1.16.7/preloader-v1.16.7-windows-x64.zip",
+      "files": ["bin/PreLoader.dll", "lib/PreLoader.lib", "include/pl/Hook.h", "include/pl/MemoryResource.h", "include/pl/Config.h", "include/pl/Macro.h", "include/pl/SymbolProvider.h", "include/pl/dependency/IProvider.h", "include/pl/dependency/LibrarySearcher.h", "include/pl/dependency/DependencyWalker.h", "include/pl/PreLoader.h"]
+    },
+    {
+      "id": "peeditor", "version": "3.9.2",
+      "name": "peeditor-v3.9.2-windows-x64.zip",
+      "size": 1453932,
+      "sha256": "cfeba1e9c40fc65a1310853d5cd3d5431d7bc3855c68e23b3d9c7a26f1fe42c2",
+      "url": "https://github.com/LiteLDev/PeEditor/releases/download/v3.9.2/peeditor-windows-x64.zip",
+      "files": ["PeEditor.exe"]
+    },
+    {
+      "id": "crashlogger", "version": "1.4.0",
+      "name": "CrashLogger-v1.4.0-windows-x64.zip",
+      "size": 883734,
+      "sha256": "7f95e639936b158171ef2ab0e52fa6a8f53aaef0b7f96efe056f1d1d817e1f4e",
+      "url": "https://github.com/LiteLDev/CrashLogger/releases/download/v1.4.0/CrashLogger-windows-x64.zip",
+      "files": ["CrashLogger.exe", "COPYING", "README.md"]
+    }
+  ],
+  "bds": {
+    "version": "1.26.60.6",
+    "name": "bedrock-server-1.26.60.6.zip",
+    "size": 88759231,
+    "url": "https://www.minecraft.net/bedrockdedicatedserver/bin-win/bedrock-server-1.26.60.6.zip",
+    "sha256": "21620db4f80d0fe206f21cb08f52f4e5f14252ce865ec49ccfbe0d9f93ce88b0",
+    "digest_provenance": "OFFICIAL_INPUTS.md: EndstoneMC/bedrock-server-data v2/release/1.26.60/metadata.json; coordinator transfer and independent local SHA256 verified"
+  }
+}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BedrockInsight — 分析コンパニオン</title><link rel="stylesheet" href="/styles.css"></head>
+<body><main>
+<header><div><p class="eyebrow">BEDROCKINSIGHT · READ-ONLY COMPANION</p><h1>サーバーの記録を、確かな数字に。</h1>
+<p class="muted">SQLite 読み取り専用 / localhost限定 / BDSとは別プロセス</p></div><span class="badge">閲覧専用</span></header>
+<section class="panel"><h2>閲覧認証</h2><form id="login"><label>起動端末の閲覧トークン
+<input id="token" type="password" autocomplete="off" required spellcheck="false"></label>
+<button type="submit">接続</button><button id="logout" type="button" class="secondary">表示を消去</button></form>
+<p class="muted">トークンはこのページのメモリだけで保持。再起動・8時間経過後は再認証。</p></section>
+<p id="error" role="alert"></p>
+<section class="panel filters"><label>集計期間<select id="period"><option value="day">日別</option><option value="month">月別</option><option value="all">全期間</option></select></label>
+<label>JSTの日付 / 月<input id="date" type="date"></label><button id="refresh" type="button">更新</button><p id="period-label" class="muted">認証後に表示します</p></section>
+<section class="cards" aria-label="確定した記録">
+<article><span>確定プレイ時間</span><strong id="total-time">—</strong><small>完結セッション・重複除外</small></article>
+<article><span>開始セッション</span><strong id="total-sessions">—</strong><small>期間内に開始した記録</small></article>
+<article><span>破壊 / 設置の試行</span><strong id="total-attempts">—</strong><small>成功・素材は未計測</small></article>
+<article><span>未完了セッション（全履歴）</span><strong id="open-sessions">—</strong><small>時間加算なし・オンライン不明</small></article></section>
+<div class="columns"><section class="panel"><h2>プレイヤー別の記録</h2><label>プレイヤー<select id="player"><option value="">選択してください</option></select></label>
+<div class="pager"><button id="players-prev" class="secondary" type="button">前の100人</button><span id="players-page">1</span><button id="players-next" class="secondary" type="button">次の100人</button></div>
+<dl id="profile"><dt>状態</dt><dd>認証後、プレイヤーを選択</dd></dl><p id="unsupported" class="muted"></p></section>
+<section class="panel"><h2>ランキング</h2><label>指標<select id="metric"><option value="playtime">確定プレイ時間</option><option value="sessions">開始セッション</option><option value="destroy_attempts">破壊の試行</option><option value="place_attempts">設置の試行</option><option value="joins">参加イベント</option><option value="leaves">退出イベント</option></select></label>
+<ol id="rankings"><li class="muted">認証後に読み込みます</li></ol><div class="pager"><button id="prev" type="button" class="secondary">前へ</button><span id="page">1</span><button id="next" type="button" class="secondary">次へ</button></div>
+<p class="muted">正の記録のみ。値の降順 → 名前 → 内部IDで同点を固定。未計測項目は順位を作りません。</p></section></div>
+<section class="panel"><h2>サーバー計測の状態</h2><div class="cards">
+<article><span>実効TPS（間隔ベース）</span><strong id="tps">未計測</strong></article>
+<article><span>処理時間 MSPT</span><strong id="mspt">未計測</strong></article>
+<article><span>現在オンライン</span><strong id="online">未計測</strong></article>
+<article><span>確認できた同接ピーク・下限</span><strong id="peak">—</strong><small>選択期間の完結セッションのみ</small></article></div>
+<p id="sampling" class="muted">稼働DLLのtickサンプラーは未接続です。20 TPSを仮表示しません。</p>
+<p id="updated" class="muted"></p></section>
+<footer><p id="semantics">期間はJST、保存時刻はUTC epochミリ秒。未完了セッションを無期限に延長しません。</p>
+<p>30秒ごとに再読込。APIは認証済みGETのみ。DLL内HTTP・管理操作・rollbackは有効化しません。</p></footer>
+</main><script src="/app.js"></script></body></html>

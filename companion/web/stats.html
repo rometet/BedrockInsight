@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BedrockInsight — 全分類の統計閲覧</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/stats.css"></head>
+<body><main>
+<header><div><p class="eyebrow">BEDROCKINSIGHT · READ-ONLY</p><h1>プレイヤー統計ライブラリ</h1>
+<p class="muted">9分類・CUSTOM77項目を確認。表示項目の存在と、収集・実機検証の完了は別です。</p>
+<nav><a href="/">プレイ時間・TPS / MSPT</a> <a href="/actions">行動の詳しい観測定義</a></nav></div><span class="badge">閲覧専用</span></header>
+<section class="panel"><h2>この別プロセスの閲覧認証</h2>
+<form id="s-login"><label>起動端末のランダム閲覧トークン<input id="s-token" type="password" required autocomplete="off"></label>
+<button>接続</button><button id="s-logout" class="secondary" type="button">ログアウト・消去</button></form>
+<p class="muted">既存18767は更新しません。別の空きポートで起動する新しいコンパニオン用。トークンはメモリ内だけで保持します。</p></section>
+<p id="s-error" role="alert"></p>
+<section class="panel filters"><label>分類<select id="s-category">
+<option value="custom">カスタム統計</option><option value="mined">採掘ブロック</option><option value="broken">耐久処理の破損観測</option>
+<option value="crafted">クラフト出力申告</option><option value="used">使用処理の観測</option><option value="picked_up">主所持品の増加</option>
+<option value="dropped">投棄true入口個数</option><option value="killed">倒したエンティティ</option><option value="killed_by">死亡元エンティティ</option></select></label>
+<label>CUSTOM項目（全77）<select id="s-key" disabled><option value="minecraft:play_time">完結プレイ時間の下限</option></select></label>
+<label>期間<select id="s-period"><option value="all">全期間</option><option value="day">日別</option><option value="month">月別</option></select></label>
+<label>JST日付 / 月<input id="s-date" type="date" disabled></label><button id="s-refresh">更新</button></section>
+<section class="panel"><h2 id="s-title">認証後に表示</h2><p id="s-status" aria-live="polite">未認証</p>
+<dl><dt>対象</dt><dd id="s-scope">—</dd><dt>当該指標の値</dt><dd id="s-total">—</dd><dt>期間</dt><dd id="s-period-label">—</dd></dl>
+<p id="s-definition" class="muted"></p><p id="s-source" class="muted"></p><p id="s-coverage" class="muted"></p>
+<p class="muted">CUSTOMは選んだ1項目だけを比較します。距離・個数・時間を足した総合得点は作りません。</p></section>
+<section class="panel filters"><label>プレイヤー<select id="s-player"><option value="">全プレイヤー</option></select></label>
+<div class="pager"><button id="s-players-prev" class="secondary">前の100人</button><span id="s-players-page">1</span><button id="s-players-next" class="secondary">次の100人</button></div>
+<label>種類ID / 日本語名の部分検索<input id="s-search" type="search" maxlength="64" placeholder="例: minecraft:stone / 石"></label>
+<label>特定の種類で比較<input id="s-type" type="text" maxlength="128" placeholder="空欄なら当該分類の全種類"></label>
+<button id="s-filter">絞り込む</button><button id="s-reset" class="secondary">検索を解除</button></section>
+<div class="columns"><section class="panel"><h2>選択対象の種類別明細</h2><ol id="s-types"></ol>
+<div class="pager"><button id="s-prev" class="secondary">前の種類</button><span id="s-page">1</span><button id="s-next" class="secondary">次の種類</button></div></section>
+<section class="panel"><h2>当該指標・種類のランキング</h2><p class="muted">同じ期間・種類検索で全プレイヤーを比較。正の観測だけを順位化します。</p><ol id="s-ranking"></ol>
+<div class="pager"><button id="s-rank-prev" class="secondary">前の順位</button><span id="s-rank-page">1</span><button id="s-rank-next" class="secondary">次の順位</button></div></section></div>
+<footer><p id="s-limitations">収集・実プレイ・GUI受入は未完了。未記録を0や成功に置き換えません。</p><p id="s-updated"></p></footer>
+</main><script src="/stats.js" defer></script></body></html>
