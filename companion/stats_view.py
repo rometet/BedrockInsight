@@ -65,6 +65,18 @@ FLOWER_POT_CAUSE = 'll26.60.flower_pot_place.v1'
 NOTE_BLOCK_CAUSE = 'll26.60.noteblock_attack.v1'
 BLOCK_USE_CAUSE = 'll26.60.block_use_success.v1'
 
+# Item producers ported from LK-Stats v0.13.0 PlayerItemStatsHandler.
+USE_CONSUMED_CAUSE = 'll26.60.player_use_item_consumed.v1'
+HURT_USED_CAUSE = 'll26.60.item_hurt_used.v1'
+CREATED_OUTPUT_CAUSE = 'll26.60.created_output_transfer.v1'
+FURNACE_OUTPUT_CAUSE = 'll26.60.furnace_output_extract.v1'
+TRADE_OUTPUT_CAUSE = 'll26.60.trade_created_output.v1'
+ENCHANT_OUTPUT_CAUSE = 'll26.60.enchant_output_transfer.v1'
+PLAY_RECORD_CAUSE = 'll26.60.play_record_place.v1'
+# Consuming ItemUseMethod names and their pinned 26.60 ordinals.
+USE_METHOD_NAMES = frozenset(('eat', 'consume', 'throw', 'place', 'fill_bottle', 'pour_bucket', 'interact'))
+USE_METHOD_IDS = frozenset((1, 3, 4, 6, 7, 9, 11))
+
 # key -> (cause, producer block type) for the dedicated hooks.
 DEDICATED_INTERACTION_KEYS = {
     'eat_cake_slice': (CAKE_CAUSE, 'minecraft:cake'),
@@ -195,6 +207,60 @@ def extra_details(cause, primary, secondary, amount, raw):
                    d.get('block_type') == secondary and d.get('custom_key') == 'minecraft:' + primary and
                    d.get('success') is True and d.get('nested') is False and
                    d.get('simulated_player') is False and d.get('interaction_success_verified') is True)
+    if cause == USE_CONSUMED_CAUSE:
+        method = d.get('use_method_name')
+        return int(amount == 1 and valid_item_type(primary) and
+                   d.get('hook') == 'Player::$useItem' and d.get('phase') == 'post_origin_consumed' and
+                   d.get('item_type') == primary and secondary in USE_METHOD_NAMES and method == secondary and
+                   integer('use_method') and method in USE_METHOD_NAMES and
+                   d['use_method'] in USE_METHOD_IDS and d.get('consume_item') is True and
+                   d.get('nested') is False and
+                   (secondary != 'interact' or primary == 'minecraft:bone_meal'))
+    if cause == HURT_USED_CAUSE:
+        return int(amount == 1 and valid_item_type(primary) and secondary == 'durability' and
+                   d.get('hook') == 'ItemStackBase::hurtAndBreak' and d.get('phase') == 'post_origin_true' and
+                   d.get('item_type') == primary and integer('delta_damage') and d['delta_damage'] > 0 and
+                   integer('max_damage') and 1 < d['max_damage'] <= 32767 and
+                   integer('damage_before') and 0 <= d['damage_before'] <= d['max_damage'] and
+                   d.get('armor') is False and d.get('nested') is False)
+    if cause == CREATED_OUTPUT_CAUSE:
+        return int(1 <= amount <= 255 and valid_item_type(primary) and
+                   secondary in ('workbench', 'inventory', 'trade') and
+                   d.get('hook') == 'ItemStackRequestActionHandler::_handleTransfer' and
+                   d.get('phase') == 'post_origin_transfer_success' and d.get('item_type') == primary and
+                   integer('transfer_amount') and d['transfer_amount'] == amount and
+                   d.get('branch') == secondary and integer('screen_container_type') and
+                   d.get('net_result') == 0 and d.get('nested') is False and
+                   d.get('inventory_commit_verified') is True)
+    if cause == FURNACE_OUTPUT_CAUSE:
+        block = d.get('block_type')
+        return int(1 <= amount <= 255 and valid_item_type(primary) and
+                   block in ('minecraft:furnace', 'minecraft:lit_furnace', 'minecraft:smoker') and
+                   secondary == block and
+                   d.get('hook') == 'LevelContainerModel::$_onItemChanged' and
+                   d.get('phase') == 'pre_origin_model_delta' and
+                   integer('slot') and d['slot'] == 2 and integer('old_count') and integer('new_count') and
+                   integer('extracted') and 0 <= d['new_count'] < d['old_count'] <= 255 and
+                   d['extracted'] == d['old_count'] - d['new_count'] == amount and
+                   d.get('nested') is False)
+    if cause == TRADE_OUTPUT_CAUSE:
+        return int(amount == 1 and primary == 'minecraft:traded_with_villager' and secondary == 'trade_output' and
+                   d.get('hook') == 'ItemStackRequestActionHandler::_handleTransfer' and
+                   d.get('phase') == 'post_origin_transfer_success' and valid_item_type(d.get('item_type')) and
+                   integer('transfer_amount') and 1 <= d['transfer_amount'] <= 255 and
+                   d.get('screen_container_type') == 15 and
+                   d.get('villager_entity_identified') is False and d.get('nested') is False)
+    if cause == ENCHANT_OUTPUT_CAUSE:
+        return int(amount == 1 and primary == 'minecraft:enchant_item' and secondary == 'enchantment' and
+                   d.get('hook') == 'ItemStackRequestActionHandler::_handleTransfer' and
+                   d.get('phase') == 'post_origin_transfer_success' and valid_item_type(d.get('item_type')) and
+                   integer('transfer_amount') and 1 <= d['transfer_amount'] <= 255 and
+                   d.get('screen_container_type') == 3 and d.get('nested') is False)
+    if cause == PLAY_RECORD_CAUSE:
+        return int(amount == 1 and primary == 'minecraft:play_record' and valid_item_type(secondary) and
+                   d.get('hook') == 'Player::$useItem' and d.get('phase') == 'post_origin_place' and
+                   d.get('custom_key') == 'minecraft:play_record' and d.get('item_type') == secondary and
+                   d.get('use_method') == 6 and d.get('music_disc') is True and d.get('nested') is False)
     if cause == 'll26.60.actor_hurt_event.v1':
         return int(0 < amount < 2**31 and primary.startswith('cause:') and
                    secondary in ('entity', 'environment') and
@@ -244,10 +310,12 @@ CATEGORY_SOURCES = {
                         ('ll26.60.gamemode_destroy_block.v1',)),
     'broken': Projection(_events('broken', extra=True), '主所持品の同一スロット、耐久閾値・1→0消失の報告。防具・副手・全破損の網羅性は未検証。',
                          ('ll26.60.durability_item_destroyed.v1',)),
-    'crafted': Projection(_events('crafted', extra=True), '成功要求の出力種類・数量の申告。インベントリ最終コミット、精錬・取引は未検証。',
-                          ('ll26.60.craft_request_success.v1',)),
-    'used': Projection(_events('use_results', '1'), '使用処理true応答と主所持品照合。効果完了・消費成立・全用途の成功ではありません。',
-                       ('ll26.60.gamemode_use_return.v1',)),
+    'crafted': Projection(_events('crafted', extra=True),
+                          'CreatedOutputContainerからの成功転送量と、かまど/燻製器の完成品取り出し差分。全クラフト経路・レシピNBTは未検証。',
+                          (CREATED_OUTPUT_CAUSE, FURNACE_OUTPUT_CAUSE, 'll26.60.craft_request_success.v1')),
+    'used': Projection(_events('use_results', '1'),
+                       'Player::$useItemの消費系方法、または非防具の耐久消費が成功した後の観測。効果完了・全用途の成功ではありません。',
+                       (USE_CONSUMED_CAUSE, HURT_USED_CAUSE, 'll26.60.gamemode_use_return.v1')),
     'picked_up': Projection(_events('pickups'), 'take true応答中の同一主所持品・同種類の増加差分。全拾得・永続転送ではありません。',
                             ('ll26.60.take_inventory_delta.v1',)),
     'dropped': Projection(_events('drops'), '非randomly投棄true応答の入口個数。所持品差分・生成物の保存は未検証。',
@@ -288,12 +356,25 @@ for _key, _cause, _definition in (
      'openTrading正常終了後の村人target解決。画面の実表示や取引commitを確認した値ではありません。'),
     ('target_hit', 'll26.60.target_block_projectile_hit.v1',
      'ターゲットブロックへの飛び道具命中を処理後に観測し、飛び道具の所有者をPlayerへ解決した値。未所有・環境発射は数えません。'),
-    ('traded_with_villager', 'll26.60.trade_result_transfer_success.v1',
-     '取引結果プレビューからプレイヤー所持品への転送がエンジン自身の成功結果で成立した回数。材料転送や失敗は除外。村人実体は未特定。'),
+    ('enchant_item', ENCHANT_OUTPUT_CAUSE,
+     'エンチャント画面のCreatedOutputContainerから成功転送された回数。材料転送や失敗は除外。'),
+    ('play_record', PLAY_RECORD_CAUSE,
+     'レコードを設置して再生した回数。設置以外の使用方法は数えません。'),
 ):
     CUSTOM_SOURCES[_key] = Projection('SELECT actor_id,:key AS type,value,first_ms,last_ms FROM ('+
         _events('view_events', extra=True, where="event_kind='player_interaction_result' AND cause=:cause AND primary_type=:key")+')',
         _definition, (_cause,))
+
+# The trade counter accepts both the LK-Stats v0.13.0 created-output producer and
+# the older trade-result-preview producer, so previously stored rows stay visible.
+CUSTOM_SOURCES['traded_with_villager'] = Projection(
+    'SELECT actor_id,:key AS type,value,first_ms,last_ms FROM ('+
+    _events('view_events', extra=True,
+            where="event_kind='player_interaction_result' AND cause IN "
+                  "('ll26.60.trade_result_transfer_success.v1','ll26.60.trade_created_output.v1') "
+                  "AND primary_type=:key")+')',
+    '取引結果の成功転送で成立した取引回数。材料転送や失敗は除外し、村人実体は未特定です。',
+    (TRADE_OUTPUT_CAUSE, 'll26.60.trade_result_transfer_success.v1'))
 
 for _key in sorted(INTERACTION_KEYS):
     _block_use = _key in BLOCK_USE_KEYS

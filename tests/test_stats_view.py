@@ -86,7 +86,7 @@ class StatsViewTests(Fixture):
             self.assertEqual(r['status'],'recorded_observation')
             self.assertNotIn('private-uuid',json.dumps(r));self.assertNotIn('source_id',json.dumps(r))
         self.assertEqual(self.view(category='picked_up')['unit'],'個')
-        self.assertIn('最終コミット',self.view(category='crafted')['definition'])
+        self.assertIn('全クラフト経路',self.view(category='crafted')['definition'])
 
     def test_pre_notifications_not_canonical_custom_and_invalid_details(self):
         self.player()

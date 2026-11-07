@@ -60,10 +60,9 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
   }
   assert.ok(el('kill-definition').textContent.includes('飛び道具'));
   for(const type of data.item_use_results.types) {
-    const n=type.items==null?'未計測／記録なし':type.items+' 個';
-    assert.ok(el('use-results').children.some(c=>c.textContent===type.type+' / '+(type.hand==='main_hand'?'主手':'副手')+' — true応答 '+type.actions+' 回 / 主所持品減少 '+n));
+    assert.ok(el('use-results').children.some(c=>c.textContent===type.type+' / '+type.method+' — 使用成立 '+type.actions+' 回'));
   }
-  assert.ok(el('use-definition').textContent.includes('消費成功ではありません'));
+  assert.ok(el('use-definition').textContent.includes('全用途の成功ではありません'));
   assert.ok(el('profile').children.some(c=>c.textContent==='ブロック採掘の成功（種類別）'));
   for(const type of data.blocks_mined.types) {
     assert.ok(el('mined').children.some(c=>c.textContent===type.type+' — '+type.count+' 回'));
@@ -77,7 +76,7 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
   for(const type of data.items_crafted.types) {
     assert.ok(el('crafted').children.some(c=>c.textContent===type.type+' — '+type.items+' 個 / '+type.actions+' 回'));
   }
-  assert.ok(el('crafted-definition').textContent.includes('最終コミットは未検証'));
+  assert.ok(el('crafted-definition').textContent.includes('全クラフト経路'));
   for(const mode of data.travel_distance.modes) {
     assert.ok(el('travel').children.some(c=>c.textContent===mode.mode+' — '+mode.cm+' cm'));
   }

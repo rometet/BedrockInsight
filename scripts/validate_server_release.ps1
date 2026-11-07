@@ -157,7 +157,25 @@ function Remove-BdsIntervalRuntimeDelayImport([string[]]$Inspection) {
         # Committed trade result transfer (ItemStackNetResult::Success).
         '?_handleTransfer@ItemStackRequestActionHandler@@QEAA?AW4ItemStackNetResult@@AEBVItemStackRequestActionTransferBase@@_N11@Z',
         # Surface vs underwater movement split (Water material).
-        '?isUnderLiquid@Actor@@QEBA_NW4MaterialType@v1_26_20@SharedTypes@@@Z')
+        '?isUnderLiquid@Actor@@QEBA_NW4MaterialType@v1_26_20@SharedTypes@@@Z',
+        # Actual post-origin block hooks (Cake, Cauldron, FlowerPot, NoteBlock,
+        # and the generic Block::use path), validated against the pinned 26.60
+        # header declarations and the linked candidate PE.
+        '?removeCakeSlice@CakeBlock@@SAXAEAVPlayer@@AEAVBlockSource@@AEBVBlockPos@@PEBVBlock@@@Z',
+        '?_useInventory@CauldronBlock@@SAXAEAVPlayer@@AEAVItemStack@@1H@Z',
+        '?_sendCauldronUsedEventToClient@CauldronBlock@@SAXAEBVPlayer@@FW4POIBlockInteractionType@MinecraftEventing@@@Z',
+        '?use@FlowerPotBlock@@QEBAXAEAVBlockPlayerInteractEvent@BlockEvents@@@Z',
+        '?$attack@NoteBlock@@QEBA_NPEAVPlayer@@AEBVBlockPos@@@Z',
+        '?use@Block@@QEBA_NAEAVPlayer@@AEBVBlockPos@@EW4HandSlot@@V?$optional@VVec3@@@std@@@Z',
+        # Native Player::$useItem success and armor durability classification.
+        '?$useItem@Player@@QEAAXAEAVItemStackBase@@W4ItemUseMethod@@_N@Z',
+        '?isArmorItem@ItemStackBase@@QEBA_NXZ',
+        # Committed output transfers: screen context/container resolution and
+        # the LevelContainerModel output-slot callback/vtable identity pair.
+        '?getScreenContext@ItemStackRequestActionHandler@@QEBAAEBVContainerScreenContext@@XZ',
+        '?_getOrInitSparseContainer@ItemStackRequestActionHandler@@QEAA?AV?$shared_ptr@VSimpleSparseContainer@@@std@@AEBUFullContainerName@@@Z',
+        '?$_onItemChanged@LevelContainerModel@@QEAAXHAEBVItemStack@@0@Z',
+        '?$vftable@LevelContainerModel@@SAPEAPEAXXZ')
     $names=@($match.Groups['api'].Captures | ForEach-Object {$_.Value})
     if (@($names | Where-Object {$_ -cnotin $allowed}).Count -or
         @($names | Select-Object -Unique).Count -ne $names.Count -or

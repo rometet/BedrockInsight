@@ -111,12 +111,12 @@
       $('use-results').replaceChildren();
       const use=data.item_use_results;
       if(use) {
-        use.types.forEach(t=>{const li=document.createElement('li');li.textContent=t.type+' / '+(t.hand==='main_hand'?'主手':'副手')+' — true応答 '+t.actions+' 回 / 主所持品減少 '+count(t.items,'個');$('use-results').append(li);});
+        use.types.forEach(t=>{const li=document.createElement('li');li.textContent=t.type+' / '+t.method+' — 使用成立 '+t.actions+' 回';$('use-results').append(li);});
         set('use-definition',use.definition);
         set('use-observed',use.scope+' / 最初: '+stamp(use.observed.first_ms)+' / 最後: '+stamp(use.observed.last_ms)+' / 保存ソース: '+use.source);
-      } else {set('use-definition','このAPIには使用true応答の照合記録がありません。試行から成功や消費を推測しません。');set('use-observed','');}
+      } else {set('use-definition','このAPIには使用の成功記録がありません。試行から成功や消費を推測しません。');set('use-observed','');}
       if(!use || !use.types.length) {
-        const li=document.createElement('li');li.textContent='使用true応答の照合記録なし（不明）。試行から成功や消費を推測しません。';$('use-results').append(li);
+        const li=document.createElement('li');li.textContent='使用成立の記録なし（不明）。試行から成功や消費を推測しません。';$('use-results').append(li);
       }
       $('deaths').replaceChildren();
       $('hurt-slots').replaceChildren();

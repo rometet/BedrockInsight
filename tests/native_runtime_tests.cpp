@@ -25,14 +25,12 @@ extern bool test_death_install_failure;
 extern bool test_pickup_install_failure;
 extern bool test_jump_install_failure;
 extern bool test_kill_install_failure;
-extern bool test_use_install_failure;
 extern bool test_hurt_install_failure;
 extern bool test_block_install_failure;
 DeathSink test_death_callback();
 PickupSink test_pickup_callback();
 JumpSink test_jump_callback();
 KillSink test_kill_callback();
-UseSink test_use_callback();
 HurtSink test_hurt_callback();
 void test_drop_observation(AnalyticsEvent);
 void test_busy_window(Level&,BusyTickWindow const&,bool valid=true);
@@ -169,15 +167,6 @@ int main() {
             levilamina::test_jump_install_failure=false;
         }
         {
-            mod->data_dir=root / "use-hook-failure";
-            levilamina::test_use_install_failure=true;
-            levilamina::Runtime runtime;
-            require(runtime.load() && !runtime.enable(),"use hook failure rejects activation");
-            require(can_switch_journal(mod->data_dir / "bedrock_insight.sqlite3"),"use failure closes writer");
-            require(runtime.unload() && bus.registrations.empty(),"use failure closes prior bridges/listeners");
-            levilamina::test_use_install_failure=false;
-        }
-        {
             mod->data_dir=root / "hurt-hook-failure";
             levilamina::test_hurt_install_failure=true;
             levilamina::Runtime runtime;
@@ -264,13 +253,10 @@ int main() {
             jump.details_json=R"({"hook":"Mob::jumpFromGround","phase":"post_upward_impulse","measurement":"pos_delta_y_x1e6","grounded_before":true,"vehicle_before":false,"vehicle_after":false,"before_y_micro":-80000,"after_y_micro":420000,"dimension":0,"world_jump_verified":false})";
             auto delayed_jump=levilamina::test_jump_callback();
             require(static_cast<bool>(delayed_jump),"jump bridge installed");delayed_jump(jump);
-            AnalyticsEvent use_result=confirmed;use_result.kind=EventKind::ItemUseResult;
-            use_result.primary_type="minecraft:snowball";use_result.secondary_type="main_hand";
-            use_result.cause="ll26.60.gamemode_use_return.v1";
-            use_result.details_json=R"({"hook":"GameMode::$useItem","phase":"return_true_inventory_snapshot","scope":"main_inventory_type_total","entry_units":16,"slots":36,"before_units":16,"after_units":15,"loss_units":1,"nested":false,"effect_completed_verified":false,"consumption_verified":false})";
-            auto delayed_use=levilamina::test_use_callback();
-            require(static_cast<bool>(delayed_use),"use bridge installed");delayed_use(use_result);
-            auto hurt=use_result;hurt.kind=EventKind::ItemHurtSlotLoss;hurt.primary_type="minecraft:wooden_pickaxe";
+            // The fake SDK has no GameMode/ItemStack engine hooks. ItemUseResult
+            // is covered by dedicated native producer and reader tests instead
+            // of pretending that a fake-only legacy use bridge still exists.
+            auto hurt=confirmed;hurt.kind=EventKind::ItemHurtSlotLoss;hurt.primary_type="minecraft:wooden_pickaxe";
             hurt.secondary_type="";hurt.cause="ll26.60.hurt_slot_empty.v1";
             hurt.details_json=R"({"hook":"ItemStackBase::hurtAndBreak","phase":"return_true_slot_empty","scope":"main_inventory_same_slot","delta_damage":1,"slots":36,"slot":0,"entry_units":1,"after_units":0,"nested":false,"break_completed_verified":false})";
             auto delayed_hurt=levilamina::test_hurt_callback();
@@ -305,7 +291,6 @@ int main() {
             delayed_pickup(pickup);
             delayed_jump(jump);
             delayed_kill(kill);
-            delayed_use(use_result);
             delayed_hurt(hurt);
             require(can_switch_journal(mod->data_dir / "bedrock_insight.sqlite3"), "disable must close worker connection before unload");
             bus.publish(join); // Must not change session or database state.
@@ -324,7 +309,6 @@ int main() {
             delayed_pickup(pickup);
             delayed_jump(jump);
             delayed_kill(kill);
-            delayed_use(use_result);
             delayed_hurt(hurt);
             for (auto const& value : delayed_snapshot) if (value.type == typeid(ll::event::PlayerJoinEvent)) {
                 std::static_pointer_cast<ll::event::Listener<ll::event::PlayerJoinEvent>>(value.listener)->callback(join);
@@ -355,10 +339,10 @@ int main() {
         sqlite_api::sqlite3* db = nullptr;
         auto path = mod->data_dir / "bedrock_insight.sqlite3";
         require(library.open_v2(path.string().c_str(), &db, sqlite_api::kReadOnly, nullptr) == 0, "open captured data");
-        require(scalar(library, db, "SELECT COUNT(*) FROM events;") == 163, "disable drains accepted events across activations");
-        require(scalar(library, db, "SELECT MAX(event_id) FROM events;") == 163, "re-enable resumes durable event IDs");
+        require(scalar(library, db, "SELECT COUNT(*) FROM events;") == 162, "disable drains accepted events across activations");
+        require(scalar(library, db, "SELECT MAX(event_id) FROM events;") == 162, "re-enable resumes durable event IDs");
         require(scalar(library, db, "SELECT COUNT(*) FROM events WHERE event_kind='item_hurt_slot_loss' AND amount=1 AND session_id LIKE 'lltick-%';")==1,"hurt slot drains exactly once");
-        require(scalar(library, db, "SELECT COUNT(*) FROM events WHERE event_kind='item_use_result' AND amount=1 AND session_id LIKE 'lltick-%';")==1,"use result drains once; stale callbacks rejected");
+        require(scalar(library, db, "SELECT COUNT(*) FROM events WHERE event_kind='item_use_result' AND amount=1 AND session_id LIKE 'lltick-%';")==0,"fake SDK does not emulate native use-result hooks");
         require(scalar(library, db, "SELECT COALESCE(SUM(items_used),0) FROM player_daily;")==0,"use result must not inflate legacy full-use totals");
         require(scalar(library, db, "SELECT COUNT(*) FROM events WHERE event_kind='direct_kill_observation' AND amount=1 AND session_id LIKE 'lltick-%';")==2,"direct player/mob observations drain once; stale callbacks rejected");
         require(scalar(library, db, "SELECT COALESCE(SUM(kills),0) FROM player_daily;")==0,"scoped kill observations do not inflate legacy full-kill totals");
@@ -392,7 +376,7 @@ int main() {
             "attempts cannot become reversible snapshots");
         library.close(db);
         // Only explicit files created by this test are removed.
-        for (auto const& folder : {"1","2","3","4","5","6","7","8","9","10","11","capture","hook-failure","drop-hook-failure","death-hook-failure","pickup-hook-failure","jump-hook-failure","kill-hook-failure","use-hook-failure","hurt-hook-failure","block-hook-failure"}) {
+        for (auto const& folder : {"1","2","3","4","5","6","7","8","9","10","11","capture","hook-failure","drop-hook-failure","death-hook-failure","pickup-hook-failure","jump-hook-failure","kill-hook-failure","hurt-hook-failure","block-hook-failure"}) {
             auto directory = root / folder;
             for (auto const& suffix : {"","-wal","-shm"}) {
                 std::filesystem::remove(directory / (std::string("bedrock_insight.sqlite3") + suffix));

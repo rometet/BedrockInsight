@@ -32,8 +32,8 @@ class UseResultActivityTests(Fixture):
         r=self.report(player=self.analytics.player_key('private-uuid-a'),metric='use_inventory_loss')
         self.assertEqual(r['selected_player']['use_inventory_loss'],2)
         self.assertEqual(r['item_use_results']['types'],[
-            {'type':'minecraft:snowball','hand':'main_hand','actions':2,'items':2},
-            {'type':'minecraft:shield','hand':'off_hand','actions':1,'items':None}])
+            {'type':'minecraft:snowball','method':'main_hand','actions':2,'items':2},
+            {'type':'minecraft:shield','method':'off_hand','actions':1,'items':None}])
         self.assertIsNone(r['selected_player']['item_use_attempts'])
         self.assertNotIn('private-uuid',json.dumps(r));self.assertIsNone(r['selected_player']['online'])
 
@@ -79,7 +79,7 @@ class UseResultActivityTests(Fixture):
         r=self.report();self.assertEqual(len(r['item_use_results']['types']),100)
         self.assertEqual(r['item_use_results']['types'][0]['type'],'addon:item_000')
         self.assertEqual(r['item_use_results']['observed'],{'first_ms':BASE+1000,'last_ms':BASE+1000})
-        self.assertIn('消費成功ではありません',r['item_use_results']['definition'])
+        self.assertIn('全用途の成功ではありません',r['item_use_results']['definition'])
         self.assertIn('全使用数',r['item_use_results']['definition'])
 
     def test_authenticated_http_to_japanese_dom(self):

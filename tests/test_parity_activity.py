@@ -44,7 +44,7 @@ class ParityActivityTests(Fixture):
         self.assertEqual(r['items_crafted']['types'], [
             {'type': 'minecraft:stick', 'items': 24, 'actions': 3},
             {'type': 'minecraft:crafting_table', 'items': 1, 'actions': 1}])
-        self.assertIn('インベントリへの最終コミットは未検証', r['items_crafted']['definition'])
+        self.assertIn('全クラフト経路', r['items_crafted']['definition'])
 
     def test_travel_modes_distance_and_ranking(self):
         self.player()

@@ -2,6 +2,26 @@ param([switch]$CompileProbe)
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Set-Location -LiteralPath $projectRoot
+
+# The legacy direct-SDK path below depends on a 26.60 server import library
+# that is not bundled in the verified public LL release. For a REAL build,
+# delegate to the audited server-derived compiler/prelink/link/PE pipeline.
+# -CompileProbe retains the old unverified diagnostic path if explicitly asked;
+# it cannot be mistaken for a deployable server mod.
+if (-not $CompileProbe) {
+    try {
+        foreach ($key in @('BEDROCKINSIGHT_CLANGCL_ROOT',
+            'BEDROCKINSIGHT_SQLITE_ROOT','BEDROCKINSIGHT_XMAKE_PACKAGES')) {
+            if (-not [Environment]::GetEnvironmentVariable($key)) { throw "$key is required" }
+        }
+        & (Join-Path $PSScriptRoot 'build_server_candidate.ps1')
+        Write-Output 'VALIDATED 26.60 SERVER CANDIDATE BUILT; player acceptance still required'
+        exit 0
+    } catch {
+        [Console]::Error.WriteLine($_.Exception.Message)
+        exit 2
+    }
+}
 try {
     $profilePath = Join-Path $projectRoot 'packaging/bds-profile.json'
     $profile = Get-Content -Raw -LiteralPath $profilePath | ConvertFrom-Json
@@ -61,8 +81,24 @@ try {
     }
     foreach ($directory in $sdkInputs.include_dirs) { $arguments += "-I$directory" }
     foreach ($define in $sdkInputs.defines) { $arguments += "/D$define" }
-    $sources = @('levilamina/mod.cpp','levilamina/runtime.cpp','levilamina/busy_tick.cpp','core/admin_api.cpp','core/event.cpp',
-        'core/rollback.cpp','core/sqlite_api.cpp','core/storage.cpp')
+    # Keep the legacy direct-SDK path aligned with xmake.lua and the verified
+    # server-candidate linker. Do not leave producer hooks out of the DLL.
+    # The production 26.60 path is scripts/build_server_candidate.ps1, which
+    # additionally verifies the pinned server archive, imports and prelink.
+    $sources = @(
+        'levilamina/mod.cpp','levilamina/runtime.cpp','levilamina/busy_tick.cpp',
+        'levilamina/player_actions.cpp','levilamina/player_death.cpp',
+        'levilamina/player_modes.cpp','levilamina/player_pickup.cpp',
+        'levilamina/player_jump.cpp','levilamina/player_kills.cpp',
+        'levilamina/player_hurt.cpp','levilamina/player_item_use.cpp',
+        'levilamina/player_item_transfer.cpp','levilamina/player_trade.cpp',
+        'levilamina/player_breed.cpp','levilamina/player_target.cpp',
+        'levilamina/player_block.cpp','levilamina/player_block_interaction.cpp',
+        'levilamina/player_travel.cpp','levilamina/player_damage.cpp',
+        'levilamina/stats_command.cpp',
+        'core/admin_api.cpp','core/event.cpp','core/rollback.cpp',
+        'core/sqlite_api.cpp','core/storage.cpp','core/stats_reader.cpp',
+        'core/remote_api.cpp')
     foreach ($source in $sources) { $arguments += Join-Path $projectRoot "src/bedrock_insight/$source" }
     $arguments += @("/Fe:$dll","/Fd:$pdb",'/link','/DEBUG',"/IMPLIB:$(Join-Path $buildRoot 'BedrockInsight.lib')",$sdkLib,$sqliteLib)
     # All generated compiler output, including temporary objects, stays here.

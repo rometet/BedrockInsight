@@ -248,19 +248,6 @@ bool Runtime::enable() noexcept {
         });
     }catch(...){}
     if(!kills){stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
-    UseToken uses;
-    try {
-        auto const generation=capture_->activation_generation;
-        uses=start_use_capture([weak=std::weak_ptr<Capture>(capture_),generation](AnalyticsEvent value) noexcept {
-            if(auto capture=weak.lock()) {
-                std::lock_guard lock(capture->mutex);
-                if(!capture->enabled || !capture->storage || capture->activation_generation!=generation)return;
-                try{value.session_id=capture->tick_run_id;static_cast<void>(submit(*capture,std::move(value)));}
-                catch(...){++capture->callback_failures;}
-            }
-        });
-    }catch(...){}
-    if(!uses){stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
     HurtToken hurts;
     try {
         auto const generation=capture_->activation_generation;
@@ -273,7 +260,7 @@ bool Runtime::enable() noexcept {
             }
         });
     }catch(...){}
-    if(!hurts){stop_use_capture(uses);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
+    if(!hurts){stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
     BlockToken blocks;
     try {
         auto const generation=capture_->activation_generation;
@@ -286,17 +273,17 @@ bool Runtime::enable() noexcept {
             }
         });
     }catch(...){}
-    if(!blocks){stop_hurt_capture(hurts);stop_use_capture(uses);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
+    if(!blocks){stop_hurt_capture(hurts);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
 #ifndef BEDROCKINSIGHT_FAKE_SDK
     TravelToken travels;
     try {
         travels=make_travel_tracker();
     }catch(...){}
-    if(!travels){stop_block_capture(blocks);stop_hurt_capture(hurts);stop_use_capture(uses);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
-    CraftToken crafts;
+    if(!travels){stop_block_capture(blocks);stop_hurt_capture(hurts);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
+    ItemUseToken item_uses;
     try {
         auto const generation=capture_->activation_generation;
-        crafts=start_craft_capture([weak=std::weak_ptr<Capture>(capture_),generation](AnalyticsEvent value) noexcept {
+        item_uses=start_item_use_capture([weak=std::weak_ptr<Capture>(capture_),generation](AnalyticsEvent value) noexcept {
             if(auto capture=weak.lock()) {
                 std::lock_guard lock(capture->mutex);
                 if(!capture->enabled || !capture->storage || capture->activation_generation!=generation)return;
@@ -305,7 +292,20 @@ bool Runtime::enable() noexcept {
             }
         });
     }catch(...){}
-    if(!crafts){stop_block_capture(blocks);stop_hurt_capture(hurts);stop_use_capture(uses);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
+    if(!item_uses){stop_block_capture(blocks);stop_hurt_capture(hurts);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
+    ItemTransferToken item_transfers;
+    try {
+        auto const generation=capture_->activation_generation;
+        item_transfers=start_item_transfer_capture([weak=std::weak_ptr<Capture>(capture_),generation](AnalyticsEvent value) noexcept {
+            if(auto capture=weak.lock()) {
+                std::lock_guard lock(capture->mutex);
+                if(!capture->enabled || !capture->storage || capture->activation_generation!=generation)return;
+                try{value.session_id=capture->tick_run_id;static_cast<void>(submit(*capture,std::move(value)));}
+                catch(...){++capture->callback_failures;}
+            }
+        });
+    }catch(...){}
+    if(!item_transfers){stop_item_use_capture(item_uses);stop_block_capture(blocks);stop_hurt_capture(hurts);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
     TradeToken trades;
     try {
         auto const generation=capture_->activation_generation;
@@ -318,7 +318,7 @@ bool Runtime::enable() noexcept {
             }
         });
     }catch(...){}
-    if(!trades){stop_craft_capture(crafts);stop_block_capture(blocks);stop_hurt_capture(hurts);stop_use_capture(uses);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
+    if(!trades){stop_item_transfer_capture(item_transfers);stop_item_use_capture(item_uses);stop_block_capture(blocks);stop_hurt_capture(hurts);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
     BreedToken breeds;
     try {
         auto const generation=capture_->activation_generation;
@@ -331,7 +331,7 @@ bool Runtime::enable() noexcept {
             }
         });
     }catch(...){}
-    if(!breeds){stop_trade_capture(trades);stop_craft_capture(crafts);stop_block_capture(blocks);stop_hurt_capture(hurts);stop_use_capture(uses);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
+    if(!breeds){stop_trade_capture(trades);stop_item_transfer_capture(item_transfers);stop_item_use_capture(item_uses);stop_block_capture(blocks);stop_hurt_capture(hurts);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
     TargetToken targets;
     try {
         auto const generation=capture_->activation_generation;
@@ -344,7 +344,7 @@ bool Runtime::enable() noexcept {
             }
         });
     }catch(...){}
-    if(!targets){stop_breed_capture(breeds);stop_trade_capture(trades);stop_craft_capture(crafts);stop_block_capture(blocks);stop_hurt_capture(hurts);stop_use_capture(uses);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
+    if(!targets){stop_breed_capture(breeds);stop_trade_capture(trades);stop_item_transfer_capture(item_transfers);stop_item_use_capture(item_uses);stop_block_capture(blocks);stop_hurt_capture(hurts);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
     BlockInteractionToken block_interactions;
     try {
         auto const generation=capture_->activation_generation;
@@ -357,7 +357,7 @@ bool Runtime::enable() noexcept {
             }
         });
     }catch(...){}
-    if(!block_interactions){stop_target_capture(targets);stop_breed_capture(breeds);stop_trade_capture(trades);stop_craft_capture(crafts);stop_block_capture(blocks);stop_hurt_capture(hurts);stop_use_capture(uses);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
+    if(!block_interactions){stop_target_capture(targets);stop_breed_capture(breeds);stop_trade_capture(trades);stop_item_transfer_capture(item_transfers);stop_item_use_capture(item_uses);stop_block_capture(blocks);stop_hurt_capture(hurts);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
 #endif
     bool admitted = false;
     {
@@ -368,12 +368,12 @@ bool Runtime::enable() noexcept {
         capture_->pickups=std::move(pickups);
         capture_->jumps=std::move(jumps);
         capture_->kills=std::move(kills);
-        capture_->uses=std::move(uses);
         capture_->hurts=std::move(hurts);
         capture_->blocks=std::move(blocks);
 #ifndef BEDROCKINSIGHT_FAKE_SDK
         capture_->travels=std::move(travels);
-        capture_->crafts=std::move(crafts);
+        capture_->item_uses=std::move(item_uses);
+        capture_->item_transfers=std::move(item_transfers);
         capture_->trades=std::move(trades);
         capture_->breeds=std::move(breeds);
         capture_->targets=std::move(targets);
@@ -396,7 +396,7 @@ bool Runtime::enable() noexcept {
 #endif
     try {
         if (auto mod = ll::mod::NativeMod::current()) {
-            mod->getLogger().info("BedrockInsight enabled: join/leave, block attempts, busy timer v1, death/use notifications; drop, dead-flag/mode, take delta, jump impulse, direct-attack death, use-result, hurt-slot and proven mined/placed block observations v1; block-use/cake/cauldron/flower-pot/noteblock interaction results v1");
+            mod->getLogger().info("BedrockInsight enabled: join/leave, block attempts, busy timer v1, death/use notifications; drop, dead-flag/mode, take delta, jump impulse, direct-attack death, hurt-slot and proven mined/placed block observations v1; block-use/cake/cauldron/flower-pot/noteblock interaction results v1; item use/durability-use, created-output craft/trade/enchant and furnace output v1");
         }
     } catch (...) {}
     return true;
@@ -429,12 +429,12 @@ bool Runtime::stop_storage() noexcept {
     PickupToken pickups;
     JumpToken jumps;
     KillToken kills;
-    UseToken uses;
     HurtToken hurts;
     BlockToken blocks;
 #ifndef BEDROCKINSIGHT_FAKE_SDK
     TravelToken travels;
-    CraftToken crafts;
+    ItemUseToken item_uses;
+    ItemTransferToken item_transfers;
     TradeToken trades;
     BreedToken breeds;
     TargetToken targets;
@@ -455,12 +455,12 @@ bool Runtime::stop_storage() noexcept {
         pickups=std::move(capture_->pickups);
         jumps=std::move(capture_->jumps);
         kills=std::move(capture_->kills);
-        uses=std::move(capture_->uses);
         hurts=std::move(capture_->hurts);
         blocks=std::move(capture_->blocks);
 #ifndef BEDROCKINSIGHT_FAKE_SDK
         travels=std::move(capture_->travels);
-        crafts=std::move(capture_->crafts);
+        item_uses=std::move(capture_->item_uses);
+        item_transfers=std::move(capture_->item_transfers);
         trades=std::move(capture_->trades);
         breeds=std::move(capture_->breeds);
         targets=std::move(capture_->targets);
@@ -521,7 +521,6 @@ bool Runtime::stop_storage() noexcept {
     stop_pickup_capture(pickups);
     stop_jump_capture(jumps);
     stop_kill_capture(kills);
-    stop_use_capture(uses);
     stop_hurt_capture(hurts);
     stop_block_capture(blocks);
 #ifndef BEDROCKINSIGHT_FAKE_SDK
@@ -529,7 +528,8 @@ bool Runtime::stop_storage() noexcept {
     stop_block_interaction_capture(block_interactions);
     stop_breed_capture(breeds);
     stop_trade_capture(trades);
-    stop_craft_capture(crafts);
+    stop_item_transfer_capture(item_transfers);
+    stop_item_use_capture(item_uses);
 #endif
     if (storage) {
         // stop() closes admission, drains accepted events and joins the worker.

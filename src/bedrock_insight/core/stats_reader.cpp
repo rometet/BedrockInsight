@@ -134,8 +134,18 @@ std::string const& custom_type_query() {
         "AND event_kind='player_interaction_result' AND cause='ll26.60.target_block_projectile_hit.v1' "
         "AND typeof(amount)='integer' AND amount>0 "
         "UNION ALL SELECT 'minecraft:traded_with_villager', amount FROM events WHERE actor_id=:id "
-        "AND event_kind='player_interaction_result' AND cause='ll26.60.trade_result_transfer_success.v1' "
-        "AND typeof(amount)='integer' AND amount>0 "
+        "AND event_kind='player_interaction_result' "
+        "AND cause IN ('ll26.60.trade_result_transfer_success.v1','ll26.60.trade_created_output.v1') "
+        "AND primary_type='minecraft:traded_with_villager' AND typeof(amount)='integer' AND amount>0 "
+        "UNION ALL SELECT 'minecraft:play_record', amount FROM events WHERE actor_id=:id "
+        "AND event_kind='player_interaction_result' AND cause='ll26.60.play_record_place.v1' "
+        "AND primary_type='minecraft:play_record' AND typeof(amount)='integer' AND amount=1 "
+        // The native enchantment transfer producer records one committed
+        // enchanted output; never count a click or an unrelated transfer.
+        "UNION ALL SELECT 'minecraft:enchant_item', amount FROM events WHERE actor_id=:id "
+        "AND event_kind='player_interaction_result' AND cause='ll26.60.enchant_output_transfer.v1' "
+        "AND primary_type='minecraft:enchant_item' AND secondary_type='enchantment' "
+        "AND typeof(amount)='integer' AND amount=1 "
         // World time: cumulative real Level ticks persisted by the busy-tick
         // sampler. This is a WORLD value shared by every player (as in vanilla),
         // NOT the player's play_time. It only counts ticks observed by this
@@ -160,12 +170,14 @@ char const* type_query(StatsCategory category) {
     case StatsCategory::Crafted:
         return "SELECT primary_type AS key, SUM(amount) AS value FROM events "
                "WHERE actor_id=:id AND event_kind='item_craft_result' "
-               "AND cause='ll26.60.craft_request_success.v1' AND typeof(amount)='integer' AND amount>0 "
+               "AND cause IN ('ll26.60.craft_request_success.v1','ll26.60.created_output_transfer.v1',"
+               "'ll26.60.furnace_output_extract.v1') AND typeof(amount)='integer' AND amount>0 "
                "GROUP BY primary_type ORDER BY value DESC, key COLLATE BINARY";
     case StatsCategory::Used:
         return "SELECT primary_type AS key, SUM(amount) AS value FROM events "
                "WHERE actor_id=:id AND event_kind='item_use_result' "
-               "AND cause='ll26.60.gamemode_use_return.v1' AND typeof(amount)='integer' AND amount>0 "
+               "AND cause IN ('ll26.60.gamemode_use_return.v1','ll26.60.player_use_item_consumed.v1',"
+               "'ll26.60.item_hurt_used.v1') AND typeof(amount)='integer' AND amount>0 "
                "GROUP BY primary_type ORDER BY value DESC, key COLLATE BINARY";
     case StatsCategory::PickedUp:
         return "SELECT primary_type AS key, SUM(amount) AS value FROM events "
@@ -209,11 +221,13 @@ char const* ranking_query(StatsCategory category) {
                "GROUP BY actor_id";
     case StatsCategory::Crafted:
         return "SELECT actor_id, SUM(amount) AS value FROM events WHERE event_kind='item_craft_result' "
-               "AND cause='ll26.60.craft_request_success.v1' AND typeof(amount)='integer' AND amount>0 "
+               "AND cause IN ('ll26.60.craft_request_success.v1','ll26.60.created_output_transfer.v1',"
+               "'ll26.60.furnace_output_extract.v1') AND typeof(amount)='integer' AND amount>0 "
                "GROUP BY actor_id";
     case StatsCategory::Used:
         return "SELECT actor_id, SUM(amount) AS value FROM events WHERE event_kind='item_use_result' "
-               "AND cause='ll26.60.gamemode_use_return.v1' AND typeof(amount)='integer' AND amount>0 "
+               "AND cause IN ('ll26.60.gamemode_use_return.v1','ll26.60.player_use_item_consumed.v1',"
+               "'ll26.60.item_hurt_used.v1') AND typeof(amount)='integer' AND amount>0 "
                "GROUP BY actor_id";
     case StatsCategory::PickedUp:
         return "SELECT actor_id, SUM(amount) AS value FROM events WHERE event_kind='item_pickup_delta' "
@@ -340,8 +354,20 @@ std::string custom_ranking_query(std::string_view key, std::string& error) {
     }
     if (key == "minecraft:traded_with_villager") {
         return "SELECT actor_id, SUM(amount) AS value FROM events WHERE event_kind='player_interaction_result' "
-               "AND cause='ll26.60.trade_result_transfer_success.v1' "
+               "AND cause IN ('ll26.60.trade_result_transfer_success.v1','ll26.60.trade_created_output.v1') "
+               "AND primary_type='minecraft:traded_with_villager' "
                "AND typeof(amount)='integer' AND amount>0 GROUP BY actor_id";
+    }
+    if (key == "minecraft:play_record") {
+        return "SELECT actor_id, SUM(amount) AS value FROM events WHERE event_kind='player_interaction_result' "
+               "AND cause='ll26.60.play_record_place.v1' AND primary_type='minecraft:play_record' "
+               "AND typeof(amount)='integer' AND amount=1 GROUP BY actor_id";
+    }
+    if (key == "minecraft:enchant_item") {
+        return "SELECT actor_id, SUM(amount) AS value FROM events WHERE event_kind='player_interaction_result' "
+               "AND cause='ll26.60.enchant_output_transfer.v1' "
+               "AND primary_type='minecraft:enchant_item' AND secondary_type='enchantment' "
+               "AND typeof(amount)='integer' AND amount=1 GROUP BY actor_id";
     }
     if (key == "minecraft:total_world_time") {
         // A shared world tick count cannot be ranked per player; ranking it

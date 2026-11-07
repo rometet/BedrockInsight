@@ -161,7 +161,7 @@ LL_TYPE_INSTANCE_HOOK(FurnaceOutputHook,ll::memory::HookPriority::Lowest,LevelCo
         if(*reinterpret_cast<void***>(this)==LevelContainerModel::$vftable()) {
             auto& player=mPlayer;
             auto const& uuid=player.getUuid();
-            auto const& pos=mBlockPos;
+            ::BlockPos const& pos=mBlockPos;
             if((uuid.a!=0 || uuid.b!=0) && pos.x>-30000000 && pos.x<30000000
                 && pos.y>=-512 && pos.y<=512 && pos.z>-30000000 && pos.z<30000000) {
                 auto block_type=player.getDimensionBlockSource().getBlock(pos).getTypeName();

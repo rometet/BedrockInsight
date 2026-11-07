@@ -10,11 +10,11 @@
 #include "bedrock_insight/levilamina/player_pickup.hpp"
 #include "bedrock_insight/levilamina/player_jump.hpp"
 #include "bedrock_insight/levilamina/player_kills.hpp"
-#include "bedrock_insight/levilamina/player_use.hpp"
 #include "bedrock_insight/levilamina/player_hurt.hpp"
 #ifndef BEDROCKINSIGHT_FAKE_SDK
 #include "bedrock_insight/levilamina/player_travel.hpp"
-#include "bedrock_insight/levilamina/player_craft.hpp"
+#include "bedrock_insight/levilamina/player_item_use.hpp"
+#include "bedrock_insight/levilamina/player_item_transfer.hpp"
 #include "bedrock_insight/levilamina/player_trade.hpp"
 #include "bedrock_insight/levilamina/player_breed.hpp"
 #include "bedrock_insight/levilamina/player_target.hpp"
@@ -107,12 +107,12 @@ private:
         PickupToken pickups;
         JumpToken jumps;
         KillToken kills;
-        UseToken uses;
         HurtToken hurts;
         BlockToken blocks;
 #ifndef BEDROCKINSIGHT_FAKE_SDK
         TravelToken travels;
-        CraftToken crafts;
+        ItemUseToken item_uses;
+        ItemTransferToken item_transfers;
         TradeToken trades;
         BreedToken breeds;
         TargetToken targets;

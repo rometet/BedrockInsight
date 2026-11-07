@@ -62,6 +62,17 @@ int main() {
     event(db, "block_mined_result", "ll26.60.gamemode_destroy_block.v1", "minecraft:stone", "", 1, "uuid64:1:2");
     event(db, "block_mined_result", "ll26.60.gamemode_destroy_block.v1", "minecraft:dirt", "", 1, "uuid64:3:4");
     event(db, "item_craft_result", "ll26.60.craft_request_success.v1", "minecraft:stick", "", 3, "uuid64:1:2");
+    // The current 26.60 producer uses different post-transfer causes from the
+    // historical craft_request_success rows. All are actual crafted outputs.
+    event(db, "item_craft_result", "ll26.60.created_output_transfer.v1", "minecraft:planks", "workbench", 4,
+        "uuid64:1:2");
+    event(db, "item_craft_result", "ll26.60.furnace_output_extract.v1", "minecraft:iron_ingot", "minecraft:furnace", 2,
+        "uuid64:1:2");
+    event(db, "item_use_result", "ll26.60.player_use_item_consumed.v1", "minecraft:snowball", "throw", 1,
+        "uuid64:1:2");
+    event(db, "item_use_result", "ll26.60.item_hurt_used.v1", "minecraft:iron_pickaxe", "durability", 1,
+        "uuid64:1:2");
+    event(db, "item_use_result", "ll26.60.fake_use_attempt.v1", "minecraft:snowball", "", 1, "uuid64:1:2");
     event(db, "player_travel_distance", "ll26.60.poll_position_delta.v1", "walk", "", 500, "uuid64:1:2");
     event(db, "player_travel_distance", "ll26.60.poll_position_delta.v1", "walk_on_water", "", 250, "uuid64:1:2");
     event(db, "player_travel_distance", "ll26.60.poll_position_delta.v1", "walk_under_water", "", 350,
@@ -92,6 +103,20 @@ int main() {
         "minecraft:target_hit", "minecraft:arrow", 1, "uuid64:1:2");
     event(db, "player_interaction_result", "ll26.60.trade_result_transfer_success.v1",
         "minecraft:traded_with_villager", "trade_result", 1, "uuid64:1:2");
+    event(db, "player_interaction_result", "ll26.60.trade_created_output.v1",
+        "minecraft:traded_with_villager", "trade_output", 1, "uuid64:1:2");
+    event(db, "player_interaction_result", "ll26.60.play_record_place.v1",
+        "minecraft:play_record", "minecraft:music_disc_13", 1, "uuid64:1:2");
+    // A committed enchantment output is visible in both CUSTOM details and
+    // rankings; the wrong cause or container type must never count.
+    event(db, "player_interaction_result", "ll26.60.enchant_output_transfer.v1",
+        "minecraft:enchant_item", "enchantment", 1, "uuid64:1:2");
+    event(db, "player_interaction_result", "ll26.60.enchant_output_transfer.v1",
+        "minecraft:enchant_item", "other", 1, "uuid64:1:2");
+    event(db, "player_interaction_result", "ll26.60.enchant_output_transfer.v1",
+        "minecraft:enchant_item", "enchantment", 2, "uuid64:1:2");
+    event(db, "player_interaction_result", "ll26.60.fake_enchant_attempt.v1",
+        "minecraft:enchant_item", "enchantment", 1, "uuid64:1:2");
     event(db, "item_broken_result", "ll26.60.durability_item_destroyed.v1", "minecraft:iron_pickaxe", "", 1,
         "uuid64:1:2");
     // Two persisted busy-tick windows sum to the shared world time (real ticks).
@@ -118,18 +143,28 @@ int main() {
     assert(mined.total == 2);
     assert(mined.rows.size() == 1 && mined.rows[0].key == "minecraft:stone" && mined.rows[0].value == 2);
 
+    PlayerStatSummary crafted;
+    assert(reader.player_summary("uuid64:1:2", StatsCategory::Crafted, crafted, error));
+    assert(crafted.total_available && crafted.total == 9 && crafted.rows.size() == 3);
+    PlayerStatSummary used;
+    assert(reader.player_summary("uuid64:1:2", StatsCategory::Used, used, error));
+    assert(used.total_available && used.total == 2 && used.rows.size() == 2);
+
     PlayerStatSummary custom;
     assert(reader.player_summary("uuid64:1:2", StatsCategory::Custom, custom, error));
     bool has_walk = false, has_play = false, has_drop = false, has_chest = false, has_damage = false;
     bool has_since_death = false, has_sleep = false, has_sneak = false, has_dealt = false;
     bool has_talked = false, has_bred = false, has_target = false, has_barrel = false, has_traded = false;
+    bool has_enchant = false, has_record = false;
     bool has_on_water = false, has_under_water = false, has_world_time = false, has_cake = false;
     for (auto const& row : custom.rows) {
         if (row.key == "minecraft:eat_cake_slice") { has_cake = row.value == 1; }
         if (row.key == "minecraft:talked_to_villager") { has_talked = row.value == 1; }
         if (row.key == "minecraft:animals_bred") { has_bred = row.value == 1; }
         if (row.key == "minecraft:target_hit") { has_target = row.value == 1; }
-        if (row.key == "minecraft:traded_with_villager") { has_traded = row.value == 1; }
+        if (row.key == "minecraft:traded_with_villager") { has_traded = row.value == 2; }
+        if (row.key == "minecraft:play_record") { has_record = row.value == 1; }
+        if (row.key == "minecraft:enchant_item") { has_enchant = row.value == 1; }
         if (row.key == "minecraft:walk_on_water_one_cm") { has_on_water = row.value == 250; }
         if (row.key == "minecraft:walk_under_water_one_cm") { has_under_water = row.value == 350; }
         if (row.key == "minecraft:total_world_time") { has_world_time = row.value == 1000; }
@@ -146,7 +181,7 @@ int main() {
     }
     assert(has_walk && has_play && has_since_death && has_drop && !has_chest && has_barrel && has_damage
         && has_dealt && has_sleep && has_sneak && has_talked && has_bred && has_target && has_traded
-        && has_on_water && has_under_water && has_world_time && has_cake);
+        && has_on_water && has_under_water && has_world_time && has_cake && has_enchant && has_record);
     assert(!custom.total_available && custom.total==0); // not cm + counts + damage + ticks
     // World time is a shared world value, never rankable per player.
     std::vector<RankingEntry> world_rank;
@@ -159,6 +194,10 @@ int main() {
         && broken.rows[0].key == "minecraft:iron_pickaxe");
 
     std::vector<RankingEntry> ranking;
+    assert(reader.ranking(StatsCategory::Crafted, {}, 0, 10, ranking, error));
+    assert(ranking.size() == 1 && ranking[0].value == 9);
+    assert(reader.ranking(StatsCategory::Used, {}, 0, 10, ranking, error));
+    assert(ranking.size() == 1 && ranking[0].value == 2);
     assert(reader.ranking(StatsCategory::Mined, {}, 0, 10, ranking, error));
     assert(ranking.size() == 2);
     assert(ranking[0].display_name == "Alice" && ranking[0].value == 2);
@@ -200,7 +239,11 @@ int main() {
     assert(reader.ranking(StatsCategory::Custom, "minecraft:target_hit", 0, 10, custom_rank, error));
     assert(custom_rank.size() == 1 && custom_rank[0].value == 1);
     assert(reader.ranking(StatsCategory::Custom, "minecraft:traded_with_villager", 0, 10, custom_rank, error));
+    assert(custom_rank.size() == 1 && custom_rank[0].value == 2);
+    assert(reader.ranking(StatsCategory::Custom, "minecraft:play_record", 0, 10, custom_rank, error));
     assert(custom_rank.size() == 1 && custom_rank[0].value == 1);
+    assert(reader.ranking(StatsCategory::Custom, "minecraft:enchant_item", 0, 10, custom_rank, error));
+    assert(custom_rank.size() == 1 && custom_rank[0].display_name == "Alice" && custom_rank[0].value == 1);
 
     // Closed intervals merge duplicates/nesting/chains, but not gaps. Abandoned
     // open, negative, malformed and future-ended sessions NEVER grow to now.

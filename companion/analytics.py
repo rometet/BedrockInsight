@@ -46,8 +46,8 @@ METRICS = {
     "projectile_kills": ("子飛び道具・所有者解決済み死亡観測", "count"),
     "direct_mob_kills": ("直接攻撃・Mob死亡フラグ成立観測", "count"),
     "direct_player_kills": ("直接攻撃・プレイヤー死亡フラグ成立観測", "count"),
-    "use_return_actions": ("使用処理true応答・所持品照合済み", "count"),
-    "use_inventory_loss": ("使用true応答中・主所持品の減少個数", "items"),
+    "use_return_actions": ("使用の成功観測（消費系/耐久消費）", "count"),
+    "use_inventory_loss": ("使用の種類別記録数", "count"),
     "hurt_slot_losses": ("耐久処理true応答・主所持品スロットの1個消失", "count"),
     "mined_blocks": ("ブロック採掘の成功（種類別）", "count"),
     "mined_block_actions": ("ブロック採掘成功の観測回数", "count"),
@@ -269,10 +269,16 @@ WITH valid AS (
 ), projectile_totals AS (
  SELECT actor_id,COUNT(*) AS projectile_kills FROM projectile_kills GROUP BY actor_id
 ), use_results AS (
- SELECT *,bi_use_loss(details_json) AS loss FROM events WHERE event_kind='item_use_result'
- AND cause='ll26.60.gamemode_use_return.v1' AND actor_kind='player' AND actor_id!=''
+ SELECT *,CASE WHEN cause='ll26.60.gamemode_use_return.v1'
+  THEN COALESCE(bi_use_loss(details_json),0) ELSE 1 END AS loss FROM events
+ WHERE event_kind='item_use_result'
+ AND ((cause='ll26.60.gamemode_use_return.v1' AND secondary_type IN ('main_hand','off_hand')
+       AND bi_use_loss(details_json) IS NOT NULL)
+   OR (cause='ll26.60.item_hurt_used.v1' AND secondary_type='durability')
+   OR (cause='ll26.60.player_use_item_consumed.v1' AND secondary_type IN
+       ('eat','consume','throw','place','fill_bottle','pour_bucket','interact')))
+ AND actor_kind='player' AND actor_id!=''
  AND typeof(amount)='integer' AND amount=1 AND bi_item_type(primary_type)
- AND secondary_type IN ('main_hand','off_hand') AND bi_use_loss(details_json) IS NOT NULL
  AND EXISTS(SELECT 1 FROM players WHERE player_id=events.actor_id)
  AND occurred_at_ms>=:start AND occurred_at_ms<:end AND occurred_at_ms<=:now
 ), use_totals AS (
@@ -306,9 +312,13 @@ WITH valid AS (
  SELECT actor_id,SUM(amount) AS placed_blocks,COUNT(*) AS placed_block_actions FROM placed GROUP BY actor_id
 ), crafted AS (
  SELECT * FROM events WHERE event_kind='item_craft_result'
- AND cause='ll26.60.craft_request_success.v1' AND actor_kind='player' AND actor_id!=''
+ AND cause IN ('ll26.60.craft_request_success.v1','ll26.60.created_output_transfer.v1',
+  'll26.60.furnace_output_extract.v1') AND actor_kind='player' AND actor_id!=''
  AND typeof(amount)='integer' AND amount BETWEEN 1 AND 4096 AND bi_item_type(primary_type)
- AND (secondary_type='' OR secondary_type IS NULL)
+ AND ((cause='ll26.60.craft_request_success.v1' AND (secondary_type='' OR secondary_type IS NULL))
+   OR (cause='ll26.60.created_output_transfer.v1'
+       AND secondary_type IN ('workbench','inventory','trade'))
+   OR (cause='ll26.60.furnace_output_extract.v1' AND bi_item_type(secondary_type)))
  AND EXISTS(SELECT 1 FROM players WHERE player_id=events.actor_id)
  AND occurred_at_ms>=:start AND occurred_at_ms<:end AND occurred_at_ms<=:now
 ), crafted_totals AS (
@@ -566,7 +576,7 @@ class Analytics:
                 secondary_type AS kind,COUNT(*) AS count FROM projectile_kills
                 WHERE (:selected IS NULL OR actor_id=:selected) GROUP BY primary_type,secondary_type
                 ORDER BY count DESC,primary_type COLLATE BINARY,secondary_type LIMIT 100""",drop_args)]
-            use_types = [dict(r) for r in db.execute(CTE + """SELECT primary_type AS type,secondary_type AS hand,
+            use_types = [dict(r) for r in db.execute(CTE + """SELECT primary_type AS type,secondary_type AS method,
                 COUNT(*) AS actions,NULLIF(SUM(loss),0) AS items FROM use_results
                 WHERE (:selected IS NULL OR actor_id=:selected) GROUP BY primary_type,secondary_type
                 ORDER BY actions DESC,primary_type COLLATE BINARY,secondary_type LIMIT 100""",drop_args)]
@@ -685,8 +695,9 @@ class Analytics:
                 "source": PROJECTILE_KILL_SOURCE,
                 "definition": "Mob死亡フラグ成立と、同じLevelのPlayerへ解決できた子飛び道具source所有者の観測。source IDと加害飛び道具IDは異なる非0値が必須。直接攻撃へ混ぜず、消失した所有者・環境・自己・間接全般は除外。全キル数・永続死亡・実プレイ受入は未検証、無記録は未計測。"},
             "item_use_results": {"types": use_types, "type_limit": 100, "observed": use_observed,
-                "source": USE_SOURCE, "scope": "選択プレイヤー" if selected else "全プレイヤー",
-                "definition": "GameMode::$useItemがtrueを返し、同じ未削除Player・主インベントリの種類別所持数を前後照合できた呼び出し。使用効果の完了や消費成功ではありません。減少個数は主所持品の正の差分（入口個数以下）のみ。他Modの変更を含み得て因果関係・全使用数・NBT別・オフハンド/装備内の減少は保証しません。入れ子・容器/サイズ変更・不明差分は除外。減少記録なしは0と断定しません。"},
+                "source": "ll26.60.player_use_item_consumed.v1 / ll26.60.item_hurt_used.v1 / ll26.60.gamemode_use_return.v1",
+                "scope": "選択プレイヤー" if selected else "全プレイヤー",
+                "definition": "LK-Stats v0.13.0と同じ使用判定。Player::$useItemが消費系の方法(Eat/Consume/Throw/FillBottle/PourBucket/Placeと骨粉Interact)で戻った後、または非防具の耐久消費が成功した後の観測。効果完了・消費成立・全用途の成功ではありません。旧来のGameMode::$useItemの所持数差分は履歴データとして残し、新規の使用は上記2経路のみで数えます。他Modの変更を含み得て全使用数は保証しません。無記録は不明です。"},
             "item_hurt_slots": {"types": hurt_types, "type_limit": 100, "observed": hurt_observed,
                 "source": HURT_SOURCE, "scope": "選択プレイヤー" if selected else "全プレイヤー",
                 "definition": "正の耐久ダメージを伴うItemStackBase::hurtAndBreakがtrueを返し、同じ未削除Player・主インベントリ・スロットで入口1個→処理後0個を観測。破損成立・因果関係・永続保存の証明ではありません。最大128枠、コピー・装備/副手・入れ子・容器/サイズ/スロット参照変更は対象外。同じ型を再装填する等の経路も欠測。記録なしは0と断定しません。"},
@@ -701,8 +712,8 @@ class Analytics:
             "items_crafted": {"types": crafted_types, "type_limit": 100, "observed": crafted_observed,
                 "scope": "選択プレイヤー" if selected else "全プレイヤー",
                 "count": selected["crafted_items"] if selected else totals["crafted_items"],
-                "source": "ll26.60.craft_request_success.v1",
-                "definition": "CraftHandlerBase::postRequestが成功を報告した時点で、そのクラフト要求の生成結果(種類×個数×回数)を集計したもの。失敗要求・結果なし・上限外は除外。レシピNBTやインベントリへの最終コミットは未検証で、作業台/ポータブルクラフト等このハンドラを通る経路に限られます。無記録は不明です。"},
+                "source": "ll26.60.created_output_transfer.v1 / ll26.60.furnace_output_extract.v1 / ll26.60.craft_request_success.v1",
+                "definition": "LK-Stats v0.13.0と同じ生成物の産出。ItemStackRequestActionHandler::_handleTransferがCreatedOutputContainerからItemStackNetResult::Successで転送した個数を、開いている画面(作業台/インベントリ/取引)別に集計し、かまど・燻製器の完成品取り出しはモデル差分で加算します。旧来のpostRequest由来の記録は履歴として残します。転送失敗・画面外・上限外は除外し、レシピNBTや全クラフト経路は証明しません。無記録は不明です。"},
             "travel_distance": {"modes": travel_modes, "observed": travel_observed,
                 "scope": "選択プレイヤー" if selected else "全プレイヤー",
                 "cm": selected["travel_cm"] if selected else totals["travel_cm"],
