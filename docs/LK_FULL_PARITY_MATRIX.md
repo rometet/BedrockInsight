@@ -78,21 +78,21 @@ BDSロード・実操作・SQLite・GUI・APIのゲートを出力します。�
 ## 2. CUSTOM 77キー
 
 凡例: 距離=`ServerLevelTickEvent` 上の座標差分ポーリング（`ll26.60.poll_position_delta.v1`、checkMovementStats は pinned prelink 非公開のため不使用）、
-相互作用=`GameMode::$useItemOn` の戻り値 `InteractionResult::mSuccess` を処理後に確認し、最初のイベントのみ確定として計数（`ll26.60.gamemode_use_item_on_success.v1`）、
+Current native semantics: Block::use post-origin true and dedicated Cake/Cauldron/FlowerPot/NoteBlock causes (32 interaction keys); real ActorHurtEvent damage; CreatedOutputContainer success in player_item_transfer.cpp for trade. Pre-outcome notifications do not count. Real-player validation pending.
 ダメージ=`ActorHurtEvent` の実量（1/10単位、`ll26.60.actor_hurt_event.v1` / `ll26.60.actor_hurt_real_damage.v1`）、
-取引=`ItemStackRequestActionHandler::_handleTransfer` の `ItemStackNetResult::Success` と取引結果プレビュー→プレイヤー所持品転送（`ll26.60.trade_result_transfer_success.v1`）。
+Trade (current producer): player_item_transfer.cpp _handleTransfer with CreatedOutputContainer and ItemStackNetResult::Success -> ll26.60.trade_created_output.v1. The 33/49 -> 12/28/29/59 preview route is NOT implemented as a standalone hook.
 処理前通知 `ll26.60.player_interact_block_event.v1` は保存のみで、どのCUSTOM値にも加算しません。
 
 | # | key | 実装経路 | 状態 |
 | --- | --- | --- | --- |
 | 1 | minecraft:animals_bred | `BreedableComponent::mate` 返却offspring非空＋love cause解決 | CODE_ONLY |
-| 2 | minecraft:clean_armor | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 3 | minecraft:clean_banner | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 4 | minecraft:open_barrel | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 5 | minecraft:bell_ring | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 6 | minecraft:eat_cake_slice | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 7 | minecraft:fill_cauldron | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 8 | minecraft:open_chest | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
+| 2 | minecraft:clean_armor | CauldronBlock::_sendCauldronUsedEventToClient -> ll26.60.cauldron_clear_item.v1 (unverified in real player) | CODE_ONLY |
+| 3 | minecraft:clean_banner | CauldronBlock::_sendCauldronUsedEventToClient -> ll26.60.cauldron_clear_item.v1 (unverified in real player) | CODE_ONLY |
+| 4 | minecraft:open_barrel | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 5 | minecraft:bell_ring | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 6 | minecraft:eat_cake_slice | CakeBlock::removeCakeSlice -> ll26.60.cake_remove_slice.v1 (unverified in real player) | CODE_ONLY |
+| 7 | minecraft:fill_cauldron | CauldronBlock::_useInventory -> ll26.60.cauldron_use_inventory.v1 (unverified in real player) | CODE_ONLY |
+| 8 | minecraft:open_chest | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
 | 9 | minecraft:damage_absorbed | BLOCKED: SharedAttributes::ABSORPTION は MCNAPI、吸収量のイベント値なし | BLOCKED |
 | 10 | minecraft:damage_blocked_by_shield | BLOCKED: Player::$_hurt/_blockUsingShield は LL/prelink 非公開 | BLOCKED |
 | 11 | minecraft:damage_dealt | `ActorHurtEvent` 実ダメージ(1/10)＋加害ActorUniqueID→追跡Player一致 | CODE_ONLY |
@@ -100,7 +100,7 @@ BDSロード・実操作・SQLite・GUI・APIのゲートを出力します。�
 | 13 | minecraft:damage_dealt_resisted | BLOCKED: 耐性後内訳のAPIなし | BLOCKED |
 | 14 | minecraft:damage_resisted | BLOCKED: 耐性後内訳のAPIなし | BLOCKED |
 | 15 | minecraft:damage_taken | `ActorHurtEvent` 実ダメージ(1/10)、cause/entity種別を併記 | CODE_ONLY |
-| 16 | minecraft:inspect_dispenser | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
+| 16 | minecraft:inspect_dispenser | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
 | 17 | minecraft:nautilus_one_cm | 距離（`ll26.60.poll_position_delta.v1`、モード別XZ/上下成分） | CODE_ONLY |
 | 18 | minecraft:happy_ghast_one_cm | 距離（`ll26.60.poll_position_delta.v1`、モード別XZ/上下成分） | CODE_ONLY |
 | 19 | minecraft:boat_one_cm | 距離（`ll26.60.poll_position_delta.v1`、モード別XZ/上下成分） | CODE_ONLY |
@@ -118,39 +118,39 @@ BDSロード・実操作・SQLite・GUI・APIのゲートを出力します。�
 | 31 | minecraft:walk_one_cm | 距離（`ll26.60.poll_position_delta.v1`、モード別XZ/上下成分） | CODE_ONLY |
 | 32 | minecraft:walk_on_water_one_cm | 距離（in_water かつ非 `isUnderLiquid(Water)`、水平成分） | CODE_ONLY |
 | 33 | minecraft:walk_under_water_one_cm | 距離（in_water かつ `isUnderLiquid(Water)`、水平成分） | CODE_ONLY |
-| 34 | minecraft:inspect_dropper | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 35 | minecraft:open_enderchest | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
+| 34 | minecraft:inspect_dropper | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 35 | minecraft:open_enderchest | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
 | 36 | minecraft:fish_caught | BLOCKED: BucketItem::$_useOn 非公開、上流経路も釣り竿でない可能性 | BLOCKED |
 | 37 | minecraft:leave_game | 既存 `session_end` → custom集計 | UNIT_ONLY |
-| 38 | minecraft:inspect_hopper | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 39 | minecraft:interact_with_anvil | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 40 | minecraft:interact_with_beacon | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 41 | minecraft:interact_with_blast_furnace | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 42 | minecraft:interact_with_brewingstand | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 43 | minecraft:interact_with_campfire | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 44 | minecraft:interact_with_cartography_table | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 45 | minecraft:interact_with_crafting_table | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 46 | minecraft:interact_with_furnace | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 47 | minecraft:interact_with_grindstone | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 48 | minecraft:interact_with_lectern | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 49 | minecraft:interact_with_loom | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 50 | minecraft:interact_with_smithing_table | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 51 | minecraft:interact_with_smoker | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 52 | minecraft:interact_with_stonecutter | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
+| 38 | minecraft:inspect_hopper | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 39 | minecraft:interact_with_anvil | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 40 | minecraft:interact_with_beacon | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 41 | minecraft:interact_with_blast_furnace | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 42 | minecraft:interact_with_brewingstand | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 43 | minecraft:interact_with_campfire | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 44 | minecraft:interact_with_cartography_table | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 45 | minecraft:interact_with_crafting_table | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 46 | minecraft:interact_with_furnace | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 47 | minecraft:interact_with_grindstone | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 48 | minecraft:interact_with_lectern | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 49 | minecraft:interact_with_loom | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 50 | minecraft:interact_with_smithing_table | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 51 | minecraft:interact_with_smoker | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 52 | minecraft:interact_with_stonecutter | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
 | 53 | minecraft:drop | `ItemDropResult` → StatsReader custom集計（C++テスト済） | CODE_ONLY |
 | 54 | minecraft:enchant_item | `ItemStackRequestActionHandler::_handleTransfer` のエンチャント出力転送成功→`ll26.60.enchant_output_transfer.v1`（ネイティブStatsReader・Web・ランキングの単体テスト済み、実機未確認） | CODE_ONLY |
 | 55 | minecraft:jump | `PlayerJumpImpulse`（既存・C++テスト済） | UNIT_ONLY |
 | 56 | minecraft:mob_kills | `DirectKillObservation(mob)`（既存・C++テスト済） | UNIT_ONLY |
 | 57 | minecraft:play_record | `Player::$useItem` のレコード設置後 `ll26.60.play_record_place.v1`→CUSTOM統計・ランキング（単体テスト済み、実機未確認） | CODE_ONLY |
-| 58 | minecraft:play_noteblock | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 59 | minecraft:tune_noteblock | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
+| 58 | minecraft:play_noteblock | NoteBlock::$attack -> ll26.60.noteblock_attack.v1 (unverified in real player) | CODE_ONLY |
+| 59 | minecraft:tune_noteblock | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
 | 60 | minecraft:deaths | `PlayerDeath`（既存・C++テスト済） | UNIT_ONLY |
-| 61 | minecraft:pot_flower | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
+| 61 | minecraft:pot_flower | FlowerPotBlock::use -> ll26.60.flower_pot_place.v1 (unverified in real player) | CODE_ONLY |
 | 62 | minecraft:player_kills | `DirectKillObservation(player)`＋子飛び道具所有者（既存・C++テスト済） | UNIT_ONLY |
 | 63 | minecraft:raid_trigger | BLOCKED: エフェクトID29/36の付与APIがLL26.60非公開、バージョン依存 | BLOCKED |
 | 64 | minecraft:raid_win | BLOCKED: 襲撃勝利のイベント/判定APIなし | BLOCKED |
-| 65 | minecraft:clean_shulker_box | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 66 | minecraft:open_shulker_box | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
+| 65 | minecraft:clean_shulker_box | CauldronBlock::_sendCauldronUsedEventToClient -> ll26.60.cauldron_clear_item.v1 (unverified in real player) | CODE_ONLY |
+| 66 | minecraft:open_shulker_box | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
 | 67 | minecraft:time_since_death | 最終確定死亡からの完結セッション経過を50ms換算tickで算出 | CODE_ONLY |
 | 68 | minecraft:time_since_rest | BLOCKED: 起床/休息原点イベントなし（上流READMEでも取消線） | BLOCKED |
 | 69 | minecraft:sneak_time | `PlayerSneakingEvent`→`PlayerSneakedEvent` の実時間をtick換算 | CODE_ONLY |
@@ -159,9 +159,9 @@ BDSロード・実操作・SQLite・GUI・APIのゲートを出力します。�
 | 72 | minecraft:play_time | 完結セッション duration_ms 合計→50ms換算tick | CODE_ONLY |
 | 73 | minecraft:total_world_time | プレイヤー別に取得できるAPIなし（play_timeで代替しない） | MISSING |
 | 74 | minecraft:sleep_in_bed | サーバーtickの `Player::isSleeping()` false→true 遷移 | CODE_ONLY |
-| 75 | minecraft:traded_with_villager | `ItemStackRequestActionHandler::_handleTransfer` 成功＋取引結果プレビュー→プレイヤー所持品転送 | CODE_ONLY |
-| 76 | minecraft:trigger_trapped_chest | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
-| 77 | minecraft:use_cauldron | `GameMode::$useItemOn` 成功応答(mSuccess)＋最初のイベントのみ | CODE_ONLY |
+| 75 | minecraft:traded_with_villager | player_item_transfer.cpp CreatedOutputContainer success -> ll26.60.trade_created_output.v1; reader also accepts old trade_result_transfer_success.v1 but no preview-container hook exists | CODE_ONLY |
+| 76 | minecraft:trigger_trapped_chest | Block::use returned true -> ll26.60.block_use_success.v1 (unverified in real player) | CODE_ONLY |
+| 77 | minecraft:use_cauldron | CauldronBlock::_useInventory -> ll26.60.cauldron_use_inventory.v1 (unverified in real player) | CODE_ONLY |
 
 集計: CODE_ONLY 61 / UNIT_ONLY 5 / BLOCKED 9 / MISSING 2。**未対応を実装済みとは扱わない。**
 BLOCKEDの根拠: `SharedAttributes::ABSORPTION`、`Player::$_hurt`/`_blockUsingShield`、
@@ -219,40 +219,14 @@ DLL export（`GetProcAddress` で他Modが解決）:
 - `int getRankStatsPage(const char* category, int page, int limit, char* out, int cap)`
 
 戻り値>=0はNUL終端JSONの長さ、`-1`引数不正、`-2`ページ/容量不正、`-3`バッファ不足、`-4`不明カテゴリ、それ以外は応答内 `ok:false`。**生のplayer_id/XUIDは応答に含めない**（表示名のみ）。`page` 0..1000、`limit` 1..100。
+## 8. 2026-11-07 source-aligned interaction/trade correction
 
-## 8. 2026-11-07 追加実装：確定相互作用・実ダメージ読取・取引成立
+This section supersedes the earlier account of a GameMode useItemOn success hook and a 33-key interaction list. The current tree has neither that producer nor a 33-key catalog.
 
-- `levilamina/player_interact.cpp`: `GameMode::$useItemOn`（MCAPI）をフックし、戻り値
-  `InteractionResult::mSuccess` が真かつ最初のイベントのときだけ `PlayerInteractionResult`
-  （`ll26.60.gamemode_use_item_on_success.v1`）を保存します。処理前の
-  `PlayerInteractBlockEvent` は観測用に別causeで残し、確定値には加算しません。
-  `core/interaction_observation.hpp` の `kInteractionKeys`（33件）が
-  `interaction_key_valid()` とリーダSQLの双方の単一情報源です。
-- `core/stats_reader.cpp`: CUSTOM集計とキー別ランキングが上記確定causeを受理。
-  処理前causeは引き続き拒否。`custom:<key>` 指定時のみ順位付けします。
-- ダメージ: 既存の `ActorHurtEvent` 実量（`ll26.60.actor_hurt_event.v1` /
-  `ll26.60.actor_hurt_real_damage.v1`、1/10単位）をCUSTOM `damage_taken` /
-  `damage_dealt` として読み取り・ランキング対応に接続しました。攻撃回数は
-  ダメージへ換算しません。
-- `levilamina/player_trade.cpp`: `ItemStackRequestActionHandler::_handleTransfer`
-  （MCAPI）を追加フックし、`ItemStackNetResult::Success` かつ取引結果プレビュー
-  （33/49）→プレイヤー所持品/カーソル（12/28/29/59）の転送のみを
-  `traded_with_villager` として1回計数します。材料転送・失敗は除外。
-- `scripts/validate_server_release.ps1`: 上記2つのMCAPIシンボルのみを
-  レビュー済み許可リストへ追加し、`$useItemOn` はWeak参照APIとの対を要求。
-- テスト: `tests/parity_observation_tests.cpp`（33キー整合・成功ゲート・取引分類）、
-  `tests/stats_reader_tests.cpp`（確定相互作用/実ダメージ/取引の集計とキー別ランキング、
-  処理前通知が加算されないこと）、`tests/test_stats_view.py`（同契約）。
-- ビルド/ロード: フル候補ビルド PASS、隔離BDSで native_loaded/enabled/server_started/
-  exit0/database_exists を確認。**実プレイヤー操作→SQLiteは未検証**。
+- Native interaction implementation: `src/bedrock_insight/levilamina/player_block_interaction.cpp` hooks `Block::use` after it returns true (`ll26.60.block_use_success.v1`), plus `CakeBlock::removeCakeSlice` (`ll26.60.cake_remove_slice.v1`), `CauldronBlock::_useInventory` (`ll26.60.cauldron_use_inventory.v1`), `CauldronBlock::_sendCauldronUsedEventToClient` (`ll26.60.cauldron_clear_item.v1`), `FlowerPotBlock::use` (`ll26.60.flower_pot_place.v1`) and `NoteBlock::$attack` (`ll26.60.noteblock_attack.v1`). `PlayerInteractBlockEvent` attempts remain excluded.
+- Catalog and reader: `core/interaction_observation.hpp` has 32 `kInteractionKeys` (24 generic + 8 dedicated). `interaction_key_cause()` and `core/stats_reader.cpp` use the real cause for each key. This is source-level logic only, not real-player acceptance.
+- Trade: `levilamina/player_trade.cpp` contains the `ServerPlayer::$openTrading` hook for `talked_to_villager`. The current `_handleTransfer` hook is in `levilamina/player_item_transfer.cpp`: it confirms a CreatedOutputContainer transfer succeeded, emits `ll26.60.trade_created_output.v1`, and the reader includes it in `traded_with_villager`. Legacy `ll26.60.trade_result_transfer_success.v1` is reader-compatible but not currently produced by a separate preview-container transfer hook.
+- Combat: native `ActorHurtEvent` and the dedicated real damage-dealt producer are read as `damage_taken`/`damage_dealt` (tenths); attack attempts are not substituted.
+- Tests and build: native candidate DLL SHA256 `EAB1A3026A89B15E3A90DFE47EB86871C8FC46E97B40CD5786E2B79756B2F63D` passed compile/link/PE validation; Python 126 tests, fake native safety tests and C++ stats reader fixtures passed. Fresh isolated BDS startup/load/enable/stop succeeded, SQLite created, but **actual player interactions to SQLite and GUI/API remain unverified**.
 
-| 検証 | 結果 |
-| --- | --- |
-| pinned 26.60 ヘッダでの変更4 TUコンパイル | PASS |
-| `scripts/build_server_candidate.ps1`（prelink/link/PE import検証） | PASS |
-| 候補DLL SHA256 | `F11BF8510590CA89513F67FB9389DC53DB5353C03D51727EA222270FD8D05322` |
-| 候補ZIP SHA256 | `0183CF1ECBF87B06E4802A6921F6AF9F3F6407B98EEA8CEB549D081AC960A119` |
-| 隔離BDS `.build/isolated-bds/run-782536caf3f24f52bfe79f70c340f364` | native_loaded/enabled=true, exit0, forced=false, DB作成=true |
-| C++ 単体（parity/stats_reader/remote_api/killed_by） | PASS |
-| Python `unittest discover tests` | 126 PASS |
-| 実プレイヤー→SQLite→GUI/API | **未検証** |
+**Acceptance: NOT_READY.** 9 categories / 77 CUSTOM keys remain catalog/implementation targets, not a 96-item gameplay pass.

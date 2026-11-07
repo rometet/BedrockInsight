@@ -2,60 +2,19 @@
 
 PROJECT_STATUS: IN_PROGRESS
 
-## 2026-11-07 Command Code: confirmed interactions, real damage, committed trades
+## 2026-11-07 source audit correction: actual 26.60 interaction and trade producers
 
-Full 9/77 parity remains mandatory; this is a real increment, not a completion
-claim. Protected live BDS/world/DB, companion 18767, auth/firewall/network and
-other projects. No AGPL implementation copied. No GitHub push/release.
+This entry supersedes the previous leading report, which described hooks that are not present in this source tree. Full LK-Stats 9-category/77-CUSTOM parity remains IN_PROGRESS; real-player capture acceptance has not passed.
 
-Implemented:
-- `levilamina/player_interact.cpp`: new MCAPI hook on `GameMode::$useItemOn`.
-  Records `PlayerInteractionResult` cause `ll26.60.gamemode_use_item_on_success.v1`
-  ONLY when the returned `InteractionResult::mSuccess` is true on the
-  authoritative first event. The pre-outcome `PlayerInteractBlockEvent`
-  observation is kept under its own cause and is never counted. `kInteractionKeys`
-  (33 keys) in `core/interaction_observation.hpp` is the single source of truth
-  for both validity and the reader's fixed SQL list.
-- `core/stats_reader.cpp`: CUSTOM aggregation/ranking now accept the confirmed
-  interaction cause; the pre-outcome cause stays refused. `custom:<key>` stays
-  mandatory for CUSTOM rankings (no cross-unit totals).
-- Damage: the existing real `ActorHurtEvent` amounts (tenths, causes
-  `ll26.60.actor_hurt_event.v1` / `ll26.60.actor_hurt_real_damage.v1`) are now
-  actually read as CUSTOM `damage_taken`/`damage_dealt`; attack actions are never
-  converted to damage.
-- `levilamina/player_trade.cpp`: added `ItemStackRequestActionHandler::_handleTransfer`
-  MCAPI hook. Counts `minecraft:traded_with_villager` only for
-  `ItemStackNetResult::Success` when a trade-result-preview container (33/49)
-  transfers into the player's carried inventory/cursor (12/28/29/59). Ingredient
-  transfers and failures are excluded. `core/trade_observation.hpp` holds the
-  testable classification.
-- `levilamina/player_travel.cpp` + `core/travel_observation.hpp`: added the
-  `walk_on_water` / `walk_under_water` CUSTOM distance split using
-  `Actor::isUnderLiquid(Water)`; a player in water now accrues the correct
-  surface/underwater key in addition to the primary movement mode.
-- `scripts/validate_server_release.ps1`: allowlisted exactly the two reviewed
-  MCAPI symbols (`$useItemOn`, `_handleTransfer`), raised the bounded delay-import
-  shape from 30 to 48 entries, and require the weak-reference API pair for
-  `$useItemOn`.
-- Tests: parity (33-key/native consistency, success gating, trade classification),
-  stats_reader (confirmed interaction/real damage/trade aggregation + per-key
-  ranking; pre-notification rows never counted), Python view contract tests.
+- `src/bedrock_insight/levilamina/player_block_interaction.cpp` is the existing native producer: `Block::use` post-origin `true` (`ll26.60.block_use_success.v1`) plus dedicated CakeBlock, CauldronBlock, FlowerPotBlock and NoteBlock success paths. No separate GameMode-useItemOn hook exists. The `PlayerInteractBlockEvent` notification is not counted as a confirmed CUSTOM interaction.
+- `src/bedrock_insight/core/interaction_observation.hpp` declares 32 `kInteractionKeys` (24 Block::use keys and 8 dedicated-key variants). `interaction_key_cause()` maps each key to its real producer. The native `StatsReader` accepts only those six post-outcome block-interaction causes for these keys.
+- `src/bedrock_insight/levilamina/player_trade.cpp` only hooks `ServerPlayer::$openTrading` for `talked_to_villager`. The committed CreatedOutputContainer transaction hook resides in `player_item_transfer.cpp` and emits `ll26.60.trade_created_output.v1` for `traded_with_villager` after success. The reader also accepts a historical `trade_result_transfer_success.v1` cause, but the current production tree has no 33/49 -> 12/28/29/59 trade hook implementing that older contract; `core/trade_observation.hpp` is a classifier, not proof of a runtime hook.
+- `src/bedrock_insight/core/stats_reader.cpp` handles real `ActorHurtEvent` damage amounts, currently produced created-output craft, item-use and enchant cases, committed trade, and per-key CUSTOM ranking. Unit-test fixtures do not prove player activity.
+- `scripts/validate_server_release.ps1` contains a bounded reviewed 26.60 import allowlist. Allowlisting an imported method does NOT prove that a particular hook is registered.
 
-Verified this turn:
-- Pinned 26.60 header compile of the changed TUs: PASS.
-- Full `scripts/build_server_candidate.ps1` (prelink/link/PE import validation):
-  PASS. Candidate `.build/server-candidate/run-67bd8fd9cd944fc2b61996b9c001bfeb`,
-  DLL SHA256 `F11BF8510590CA89513F67FB9389DC53DB5353C03D51727EA222270FD8D05322`,
-  ZIP `0183CF1ECBF87B06E4802A6921F6AF9F3F6407B98EEA8CEB549D081AC960A119`.
-- Fresh isolated BDS `.build/isolated-bds/run-782536caf3f24f52bfe79f70c340f364`
-  (ports 61702/61703): native_loaded=true, native_enabled=true,
-  server_started=true, exit_code=0, forced_termination=false, database_exists=true.
-- C++ units (parity/stats_reader/remote_api/killed_by) PASS; Python 126 PASS;
-  `scripts/audit_lk_parity.py` 96 rows / zero accepted.
-- NOT VERIFIED: any real player opening a chest, trading, taking damage, etc.
-  No event→SQLite real-play evidence yet. Matrix recomputed per row:
-  CODE_ONLY 60 / UNIT_ONLY 5 / BLOCKED 10 / MISSING 2. Still NOT_READY for the
-  user's single player acceptance test.
+Current checked build: `.build/server-candidate/run-6a952bab73fd43afbbcb56fbf1ab4530/BedrockInsight.dll` SHA256 `EAB1A3026A89B15E3A90DFE47EB86871C8FC46E97B40CD5786E2B79756B2F63D`. C++ native header compile, link, PE validation, fake SDK native safety tests, stats-reader/RemoteAPI fixture tests, and Python 126 tests passed. A fresh isolated empty-allowlist BDS run at `.build/isolated-bds/run-09550349139d407caa56c11e7d03510a` loaded/enabled/stopped cleanly and opened SQLite. These results do not imply any real-player event-to-database/UI/API acceptance; accepted gates remain zero.
+
+Release/actual-player test must be reviewed against this actual source inventory and the separate HIGH/CRITICAL review policy. Claims in older dated historical notes below are not evidence of missing hooks being implemented.
 
 ## 2026-11-07 Command Code: target_hit web projection + current-tree native re-verification
 
