@@ -17,6 +17,12 @@
 #include "bedrock_insight/levilamina/player_item_transfer.hpp"
 #include "bedrock_insight/levilamina/player_trade.hpp"
 #include "bedrock_insight/levilamina/player_breed.hpp"
+#include "bedrock_insight/levilamina/player_fish.hpp"
+#include "bedrock_insight/levilamina/player_raid_effect.hpp"
+#include "bedrock_insight/levilamina/player_absorption.hpp"
+#include "bedrock_insight/levilamina/player_rest.hpp"
+#include "bedrock_insight/levilamina/player_resistance.hpp"
+#include "bedrock_insight/levilamina/player_shield_evidence.hpp"
 #include "bedrock_insight/levilamina/player_target.hpp"
 #include "bedrock_insight/levilamina/player_block_interaction.hpp"
 
@@ -115,6 +121,12 @@ private:
         ItemTransferToken item_transfers;
         TradeToken trades;
         BreedToken breeds;
+        FishToken fish;
+        RaidEffectToken raid_effects;
+        AbsorptionToken absorption;
+        RestToken rest;
+        ResistanceToken resistance;
+        ShieldEvidenceToken shield_evidence;
         TargetToken targets;
         BlockInteractionToken block_interactions;
         std::unordered_map<std::int64_t, TrackedPlayer> players_by_uid;

@@ -15,11 +15,13 @@ from .death_source import DEATH_SOURCE, DAMAGE_CAUSES, cause_number, valid_death
 from .killed_by_source import KILLED_BY_SOURCE, valid_killed_by_details
 from .mode_source import MODE_SOURCE, valid_mode_details, first_mode_ms
 from .pickup_source import PICKUP_SOURCE, valid_pickup_details
-from .jump_source import JUMP_SOURCE, valid_jump_details
+from .jump_source import JUMP_SOURCE, JUMP_EVENT_SOURCE, valid_jump_details
 from .kill_source import KILL_SOURCE, valid_kill_details, PROJECTILE_KILL_SOURCE, valid_projectile_kill_details
 from .use_source import USE_SOURCE, use_loss
 from .hurt_source import HURT_SOURCE, valid_hurt_details
-from .block_source import MINED_SOURCE, PLACED_SOURCE, valid_block_details
+from .block_source import MINED_SOURCE, PLACED_SOURCE, MINED_V2_SOURCE, PLACED_V2_SOURCE, valid_block_details
+from .broken_source import V1 as BROKEN_V1, V2 as BROKEN_V2, valid_broken_details
+from .travel_source import valid_travel_v2
 
 JST = timezone(timedelta(hours=9))
 METRICS = {
@@ -41,7 +43,7 @@ METRICS = {
     "sneak_stops": ("スニーク終了フラグ観測", "count"),
     "pickup_inventory_items": ("拾得処理中・主所持品の増加個数", "items"),
     "pickup_delta_actions": ("拾得処理中・所持数増加の観測回数", "count"),
-    "jump_impulses": ("ジャンプ処理の上向き加速観測", "count"),
+    "jump_impulses": ("ジャンプ通知（旧加速観測を含む）", "count"),
     "direct_kills": ("直接攻撃の死亡フラグ成立観測", "count"),
     "projectile_kills": ("子飛び道具・所有者解決済み死亡観測", "count"),
     "direct_mob_kills": ("直接攻撃・Mob死亡フラグ成立観測", "count"),
@@ -57,8 +59,8 @@ METRICS = {
     "craft_actions": ("クラフト成立の回数", "count"),
     "travel_cm": ("移動距離（cm・モード別合計）", "cm"),
     "interactions": ("ブロック相互作用（CUSTOMキー別）", "count"),
-    "damage_taken_tenths": ("受けたダメージ（1/10単位）", "tenths"),
-    "damage_dealt_tenths": ("与えたダメージ（1/10単位・実ダメージ）", "tenths"),
+    "damage_taken_tenths": ("受けたダメージの処理前申告量（1/10単位）", "tenths"),
+    "damage_dealt_tenths": ("与えたダメージの処理前申告量（1/10単位）", "tenths"),
     "broken_items": ("耐久値による破損（種類別）", "count"),
     "sleep_successes": ("睡眠成立（フラグ遷移）", "count"),
     "sneak_time_ticks": ("スニーク継続（tick）", "ticks"),
@@ -166,10 +168,12 @@ def snapshot(path: Path):
         memory.create_function("bi_projectile_kill_details", 1, valid_projectile_kill_details, deterministic=True)
         memory.create_function("bi_use_loss", 1, use_loss, deterministic=True)
         memory.create_function("bi_hurt_details", 1, valid_hurt_details, deterministic=True)
-        memory.create_function("bi_block_details", 3, valid_block_details, deterministic=True)
+        memory.create_function("bi_block_details", 5, valid_block_details, deterministic=True)
+        memory.create_function("bi_broken_details", 4, valid_broken_details, deterministic=True)
         memory.create_function("bi_damage_cause", 1, lambda x: int(cause_number(x) is not None), deterministic=True)
         memory.create_function("bi_mode_details", 5, valid_mode_details, deterministic=True)
         memory.create_function("bi_mode_first_ms", 1, first_mode_ms, deterministic=True)
+        memory.create_function("bi_travel_v2", 4, valid_travel_v2, deterministic=True)
         deadline = time.monotonic() + 2
         memory.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
         yield memory
@@ -236,7 +240,7 @@ WITH valid AS (
  SELECT actor_id,SUM(amount) AS pickup_inventory_items,COUNT(*) AS pickup_delta_actions FROM pickups GROUP BY actor_id
 ), jumps AS (
  SELECT * FROM events WHERE event_kind='player_jump_impulse'
- AND cause='ll26.60.jump_pos_delta.v1' AND actor_kind='player' AND actor_id!=''
+ AND cause IN ('ll26.60.jump_pos_delta.v1','ll26.60.player_jump_event.v1') AND actor_kind='player' AND actor_id!=''
  AND typeof(amount)='integer' AND amount=1 AND primary_type='minecraft:player'
  AND (secondary_type='' OR secondary_type IS NULL) AND bi_jump_details(details_json)
  AND EXISTS(SELECT 1 FROM players WHERE player_id=events.actor_id)
@@ -294,18 +298,18 @@ WITH valid AS (
  SELECT actor_id,COUNT(*) AS hurt_slot_losses FROM hurt_slots GROUP BY actor_id
 ), mined AS (
  SELECT * FROM events WHERE event_kind='block_mined_result'
- AND cause='ll26.60.gamemode_destroy_block.v1' AND actor_kind='player' AND actor_id!=''
+ AND cause IN ('ll26.60.gamemode_destroy_block.v1','ll26.60.gamemode_destroy_block.v2') AND actor_kind='player' AND actor_id!=''
  AND typeof(amount)='integer' AND amount=1 AND bi_item_type(primary_type)
- AND (secondary_type='' OR secondary_type IS NULL) AND bi_block_details(details_json,'mined',primary_type)
+ AND (secondary_type='' OR secondary_type IS NULL) AND bi_block_details(details_json,'mined',primary_type,cause,COALESCE(secondary_type,''))
  AND EXISTS(SELECT 1 FROM players WHERE player_id=events.actor_id)
  AND occurred_at_ms>=:start AND occurred_at_ms<:end AND occurred_at_ms<=:now
 ), mined_totals AS (
  SELECT actor_id,SUM(amount) AS mined_blocks,COUNT(*) AS mined_block_actions FROM mined GROUP BY actor_id
 ), placed AS (
  SELECT * FROM events WHERE event_kind='block_placed_result'
- AND cause='ll26.60.gamemode_build_block.v1' AND actor_kind='player' AND actor_id!=''
+ AND cause IN ('ll26.60.gamemode_build_block.v1','ll26.60.gamemode_build_block.v2') AND actor_kind='player' AND actor_id!=''
  AND typeof(amount)='integer' AND amount=1 AND bi_item_type(primary_type)
- AND secondary_type IN ('main_hand','off_hand') AND bi_block_details(details_json,'placed',primary_type)
+ AND secondary_type IN ('main_hand','off_hand') AND bi_block_details(details_json,'placed',primary_type,cause,secondary_type)
  AND EXISTS(SELECT 1 FROM players WHERE player_id=events.actor_id)
  AND occurred_at_ms>=:start AND occurred_at_ms<:end AND occurred_at_ms<=:now
 ), placed_totals AS (
@@ -325,7 +329,9 @@ WITH valid AS (
  SELECT actor_id,SUM(amount) AS crafted_items,COUNT(*) AS craft_actions FROM crafted GROUP BY actor_id
 ), travels AS (
  SELECT * FROM events WHERE event_kind='player_travel_distance'
- AND cause='ll26.60.poll_position_delta.v1' AND actor_kind='player' AND actor_id!=''
+ AND (cause='ll26.60.poll_position_delta.v1' OR (cause='ll26.60.poll_position_delta.v2'
+      AND bi_travel_v2(primary_type,amount,occurred_at_ms,details_json)))
+ AND actor_kind='player' AND actor_id!=''
  AND typeof(amount)='integer' AND amount>0 AND length(primary_type) BETWEEN 1 AND 32
  AND EXISTS(SELECT 1 FROM players WHERE player_id=events.actor_id)
  AND occurred_at_ms>=:start AND occurred_at_ms<:end AND occurred_at_ms<=:now
@@ -361,8 +367,10 @@ WITH valid AS (
  SELECT actor_id,SUM(amount) AS damage_dealt_tenths FROM damage_dealt GROUP BY actor_id
 ), broken AS (
  SELECT * FROM events WHERE event_kind='item_broken_result'
- AND cause='ll26.60.durability_item_destroyed.v1' AND actor_kind='player' AND actor_id!=''
+ AND cause IN ('ll26.60.durability_item_destroyed.v1','ll26.60.durability_item_destroyed.v2') AND actor_kind='player' AND actor_id!=''
  AND typeof(amount)='integer' AND amount=1 AND bi_item_type(primary_type)
+ AND bi_broken_details(details_json,primary_type,cause,COALESCE(secondary_type,''))
+ AND typeof(occurred_at_ms)='integer'
  AND EXISTS(SELECT 1 FROM players WHERE player_id=events.actor_id)
  AND occurred_at_ms>=:start AND occurred_at_ms<:end AND occurred_at_ms<=:now
 ), broken_totals AS (
@@ -683,10 +691,11 @@ class Analytics:
             "item_pickups": {"types": pickup_types, "type_limit": 100, "observed": pickup_observed,
                 "scope": "選択プレイヤー" if selected else "全プレイヤー", "source": PICKUP_SOURCE,
                 "definition": "Player::takeがtrueを返し、同じプレイヤー・主インベントリで同種類の所持数が増加した観測。個数は入口スタック数ではなく前後差分（入口個数以下）。主所持品のみ最大128枠、入れ子・容器/サイズ変更・不明差分は除外。他Modの変更も含み得て、全拾得数・永続転送・NBT別内訳の証明ではありません。無記録は不明です。"},
-            "player_jumps": {"observed": jump_observed, "source": JUMP_SOURCE,
+            "player_jumps": {"observed": jump_observed, "source": JUMP_EVENT_SOURCE,
+                "legacy_sources": [JUMP_SOURCE],
                 "scope": "選択プレイヤー" if selected else "全プレイヤー",
                 "count": selected["jump_impulses"] if selected else totals["jump_impulses"],
-                "definition": "接地・非乗車・非死亡のPlayerがMob::jumpFromGroundを正常終了し、同じエンティティ/次元で直接PosDelta.yの正の増加を観測。値は×10^6に丸め、絶対値16以下だけを対象。入れ子・乗車/死亡/次元変更・不明値は除外。入力通知数でも空中移動完了数/距離でもありません。他Modの影響や未発火の経路は含められず、無記録は不明です。"},
+                "definition": "現在はLeviLamina::PlayerJumpEventのpost_auth_input通知数です。発行側の接地・上昇判定を使い、後続リスナーのキャンセルや空中移動の完了を独立検証しません。履歴のMob::jumpFromGround正常終了後の同一Player/次元・PosDelta.y正の増加観測も含みます（旧値は×10^6丸め・絶対値16以下、入れ子等は除外）。空中移動完了数/距離でもありません。他Modの影響や未発火の経路は含められず、無記録は不明です。"},
             "direct_kills": {"types": kill_types, "type_limit": 100, "observed": kill_observed,
                 "source": KILL_SOURCE, "scope": "選択プレイヤー" if selected else "全プレイヤー",
                 "definition": "Mob::$dieの前後で同じ未削除被害者の死亡フラグが未成立→成立となった観測。EntityAttack(2)・非child/非block・攻撃者IDと加害者IDが一致し、同じLevelのPlayerへ解決できた入口の報告者だけへ帰属。自分・飛び道具・間接/環境死・不明は除外。全キル数・永続死亡・任意Mod下の真のキラーを保証せず、この経路を通らないPlayer死亡は欠測。無記録は不明です。"},
@@ -702,13 +711,13 @@ class Analytics:
                 "source": HURT_SOURCE, "scope": "選択プレイヤー" if selected else "全プレイヤー",
                 "definition": "正の耐久ダメージを伴うItemStackBase::hurtAndBreakがtrueを返し、同じ未削除Player・主インベントリ・スロットで入口1個→処理後0個を観測。破損成立・因果関係・永続保存の証明ではありません。最大128枠、コピー・装備/副手・入れ子・容器/サイズ/スロット参照変更は対象外。同じ型を再装填する等の経路も欠測。記録なしは0と断定しません。"},
             "blocks_mined": {"types": mined_types, "type_limit": 100, "observed": mined_observed,
-                "source": MINED_SOURCE, "scope": "選択プレイヤー" if selected else "全プレイヤー",
+                "source": MINED_V2_SOURCE, "legacy_sources": [MINED_SOURCE], "scope": "選択プレイヤー" if selected else "全プレイヤー",
                 "count": selected["mined_blocks"] if selected else totals["mined_blocks"],
-                "definition": "GameMode::destroyBlockがtrueを返し、同じ未削除Player・次元で同じ座標のブロック型が入口から処理後へ変化した場合だけ、入口の名前空間付きブロック型を成功採掘として1回記録。再設置や同型のままの失敗・取消・入れ子・不明は除外。ドロップ品やNBT・素材の個数は含みません。クリエイティブ即時破壊など別経路や他の破壊処理は欠測し得るため、全破壊数・ワールド保存の証明ではありません。無記録は不明です。"},
+                "definition": "GameMode::destroyBlockのtrue応答と同座標の種類変化を入口の型で1回記録。v2は再解決した未削除Player・同Level/次元を確認してから読む限定観測です。旧v1履歴も含みますが、旧行をv2のLevel/未削除確認の証明にはしません。再設置や同型のまま・失敗・取消・入れ子・不明は除外。ドロップ品・NBT・素材の個数、クリエイティブ等の別経路、全破壊数・最終永続化・専属因果の証明ではありません。無記録は不明です。"},
             "blocks_placed": {"types": placed_types, "type_limit": 100, "observed": placed_observed,
-                "source": PLACED_SOURCE, "scope": "選択プレイヤー" if selected else "全プレイヤー",
+                "source": PLACED_V2_SOURCE, "legacy_sources": [PLACED_SOURCE], "scope": "選択プレイヤー" if selected else "全プレイヤー",
                 "count": selected["placed_blocks"] if selected else totals["placed_blocks"],
-                "definition": "GameMode::buildBlockがtrueを返し、同じ未削除Player・次元で同じ座標のブロック型が入口から処理後へ変化し、処理後が空気でない場合だけ、処理後の名前空間付きブロック型を成功設置として1回記録。同型のまま・空気・失敗・入れ子・不明は除外。ドア等の複数ブロック設置は主要座標の1個のみ数え、全設置数・ワールド保存の証明ではありません。無記録は不明です。"},
+                "definition": "GameMode::buildBlockのtrue応答と同座標の非空気への種類変化を処理後の型で1回記録。v2は再解決した未削除Player・同Level/次元を確認。旧v1履歴も含みますがv2のframe証明へ昇格しません。手の列とJSONも照合。同型のまま・空気・失敗・入れ子・不明は除外。隣接座標や複数ブロックの設置は追跡せず、全設置数・最終永続化・専属因果の証明ではありません。無記録は不明です。"},
             "items_crafted": {"types": crafted_types, "type_limit": 100, "observed": crafted_observed,
                 "scope": "選択プレイヤー" if selected else "全プレイヤー",
                 "count": selected["crafted_items"] if selected else totals["crafted_items"],
@@ -717,8 +726,8 @@ class Analytics:
             "travel_distance": {"modes": travel_modes, "observed": travel_observed,
                 "scope": "選択プレイヤー" if selected else "全プレイヤー",
                 "cm": selected["travel_cm"] if selected else totals["travel_cm"],
-                "source": "ll26.60.poll_position_delta.v1",
-                "definition": "サーバーtickごとに追跡プレイヤーの座標差分を読み、再利用可能なフラグから判定したバニラ移動モード別にcmへ換算した合計(5秒ごとに集約)。水平モードはXZ平面、落下は下降成分のみ。乗車種別は車両型名で分類し、既知外はride。teleport・tick欠落・別経路は欠測し得て、全移動距離の証明ではありません。無記録は不明です。"},
+                "source": "ll26.60.poll_position_delta.v1 / ll26.60.poll_position_delta.v2",
+                "definition": "サーバー座標の距離観測。旧v1の水平・丸め・重複水系分類は履歴のまま。v2は地上XZ、落下/登攀は上下、飛行/泳ぎ/騎乗/水中は3D。5秒窓で小数cmを合算後切捨て、次元・乗り物・死亡・JST日境界・時刻逆転・1秒超gap・10block超差分を跨ぎません。最終観測時刻の期間へ配賦。短距離teleport等は未排除のため全移動距離の証明ではありません。無記録は不明です。"},
             "block_interactions": {"types": interaction_types, "type_limit": 100, "observed": interaction_observed,
                 "scope": "選択プレイヤー" if selected else "全プレイヤー",
                 "count": selected["interactions"] if selected else totals["interactions"],
@@ -729,12 +738,13 @@ class Analytics:
                 "taken_tenths": selected["damage_taken_tenths"] if selected else totals["damage_taken_tenths"],
                 "dealt_tenths": selected["damage_dealt_tenths"] if selected else totals["damage_dealt_tenths"],
                 "source": "ll26.60.actor_hurt_event.v1 / ll26.60.actor_hurt_real_damage.v1",
-                "definition": "被弾・与ダメージともActorHurtEventの処理前実ダメージを1/10単位(1ハート=20)へ換算。与ダメージは加害エンティティの一意IDが追跡中プレイヤーと一致した場合のみ帰属し、攻撃行動の回数をダメージとして代用しません。吸収・耐性・軽減後は未計測、飛び道具の所有権帰属は欠測です。無記録は不明です。"},
+                "observation_stage": "pre_origin_notification", "final_world_outcome_verified": False,
+                "definition": "被弾・与ダメージともActorHurtEventの処理前申告量を1/10単位(1ハート=20)へ換算。与ダメージは加害エンティティの一意IDが追跡中プレイヤーと一致した場合のみ帰属し、攻撃行動の回数をダメージとして代用しません。後段の取消・変更や最終HP適用を確認した実ダメージではありません。吸収・耐性・軽減後は未計測、飛び道具の所有権帰属は欠測です。無記録は不明です。"},
             "broken_items": {"types": broken_types,
                 "scope": "選択プレイヤー" if selected else "全プレイヤー",
                 "count": selected["broken_items"] if selected else totals["broken_items"],
-                "source": "ll26.60.durability_item_destroyed.v1",
-                "definition": "耐久値を持つItem (Item::isDamageable=true, max_damage>1) が hurtAndBreak true・正の耐久ダメージ後に同一スロットで1→0になった観測。max_damage値と耐久閾値の超過は直接読んでいません。破損と確定できない置換/消費は含みません。無記録は不明です。"},
+                "source": BROKEN_V2, "legacy_sources": [BROKEN_V1],
+                "definition": "耐久処理true応答・入口耐久値と入力閾値・同じスロットの1→0を照合。v2は未削除Player・同Level/次元と主所持品/副手/防具4枠を確認。旧v1は主所持品のみでv2のframe証明にはしません。コピー・参照交換・入れ子・再装填等は欠測、全破損・専属因果・最終保存の証明ではありません。XYZは未読取、無記録は不明です。"},
             "sleep": {"count": sleep_rows.get("count") or 0, "first_ms": sleep_rows.get("first_ms"),
                 "last_ms": sleep_rows.get("last_ms"),
                 "scope": "選択プレイヤー" if selected else "全プレイヤー",

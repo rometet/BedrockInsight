@@ -40,6 +40,7 @@ std::string_view to_string(EventKind kind) noexcept {
     case EventKind::PlayerSneakTime: return "player_sneak_time";
     case EventKind::ItemBrokenResult: return "item_broken_result";
     case EventKind::PlayerKilledByEntity: return "player_killed_by_entity";
+    case EventKind::PlayerShieldEvidence: return "player_shield_evidence";
     }
     return "unknown";
 }

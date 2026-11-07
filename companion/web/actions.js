@@ -43,7 +43,7 @@
         '投棄 true 戻り値・入口個数':count(p.dropped_items,'個'),'投棄 true 戻り値':count(p.drop_actions),
         '拾得処理中・主所持品の増加':count(p.pickup_inventory_items,'個'),
         '拾得処理中・所持数増加の観測':count(p.pickup_delta_actions),
-        'ジャンプ処理の上向き加速観測':count(p.jump_impulses),
+        'ジャンプ通知（旧加速観測を含む）':count(p.jump_impulses),
         '使用処理true応答・所持品照合済み':count(p.use_return_actions),
         '使用true応答中・主所持品の減少':count(p.use_inventory_loss,'個'),
         '耐久処理true応答・主所持品スロットの1個消失':count(p.hurt_slot_losses),
@@ -55,8 +55,8 @@
         'クラフト成立の回数':count(p.craft_actions),
         '移動距離（cm）':count(p.travel_cm,'cm'),
         'ブロック相互作用':count(p.interactions),
-        '受けたダメージ（1/10）':count(p.damage_taken_tenths),
-        '与えたダメージ（1/10・実ダメージ）':count(p.damage_dealt_tenths),
+        '受けたダメージの処理前申告量（1/10）':count(p.damage_taken_tenths),
+        '与えたダメージの処理前申告量（1/10）':count(p.damage_dealt_tenths),
         '耐久値による破損（種類別）':count(p.broken_items,'個'),
         '睡眠成立（フラグ遷移）':count(p.sleep_successes),
         'スニーク継続（tick）':count(p.sneak_time_ticks),
@@ -87,7 +87,7 @@
         set('jump-count',count(jump.count));set('jump-definition',jump.definition);
         set('jump-observed',jump.scope+' / 最初: '+stamp(jump.observed.first_ms)+' / 最後: '+stamp(jump.observed.last_ms)+' / 保存ソース: '+jump.source);
       } else {
-        set('jump-count','未計測／記録なし');set('jump-definition','このAPIにはジャンプ処理の加速計測がありません。入力通知から推測しません。');set('jump-observed','');
+        set('jump-count','未計測／記録なし');set('jump-definition','このAPIには対応するジャンプ観測がありません。完了数を推測しません。');set('jump-observed','');
       }
       $('kills').replaceChildren();
       const kills=data.direct_kills;
@@ -176,7 +176,7 @@
       const dmg=data.damage;
       if(dmg) {
         const n=x=>x==null?'未計測／記録なし':x;
-        set('damage','受けたダメージ（1/10）: '+n(dmg.taken_tenths)+' / 与えたダメージ（1/10）: '+n(dmg.dealt_tenths));
+        set('damage','受けたダメージの処理前申告量（1/10）: '+n(dmg.taken_tenths)+' / 与えたダメージの処理前申告量（1/10）: '+n(dmg.dealt_tenths));
         set('damage-definition',dmg.definition);
         set('damage-observed',dmg.scope+' / 最初: '+stamp(dmg.observed.first_ms)+' / 最後: '+stamp(dmg.observed.last_ms)+' / 保存ソース: '+dmg.source);
       } else {set('damage','ダメージの記録なし（不明）。');set('damage-definition','');set('damage-observed','');}

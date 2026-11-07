@@ -57,10 +57,14 @@ $breedTail='  Import {'+"`n"+'    Symbol: ?mate@BreedableComponent@@QEAA?AV?$vec
 $breed=$trade.Substring(0,$trade.Length-1)+$breedTail
 $null=Remove-BdsIntervalRuntimeDelayImport ($regular+@($breed -split "`n"))
 $breedWithoutWeak=$drop.Substring(0,$drop.Length-1)+$breedTail
+$healthTail="  Import {`n    Symbol: ?HEALTH@SharedAttributes@@SAAEBVAttribute@@XZ (0)`n    Address: 0x180E00000`n  }`n}"
+$health=$breed.Substring(0,$breed.Length-1)+$healthTail
+$null=Remove-BdsIntervalRuntimeDelayImport ($regular+@($health -split "`n"))
 $count=0
 foreach($text in @(
     $fixture.Replace('bedrock_runtime.dll','evil.dll'),
     $fixture.Replace('getActivePlayerCount','guessedFunction'),
+    $health.Replace('?HEALTH@SharedAttributes@@SAAEBVAttribute@@XZ','?HEALTH@SharedAttributes@@SAAEAVAttribute@@XZ'),
     $drop.Replace('_N@Z','H@Z'),
     $drop.Replace('?$drop@Player@@QEAA_NAEBVItemStack@@_N@Z','?$tick@Level@@QEAAXXZ'),
     $death.Replace('ActorDamageSource','GuessedDamageSource'),
@@ -105,4 +109,4 @@ foreach($text in @(
     if(-not $failed){throw 'Malformed or unreviewed delay input accepted'}
     ++$count
 }
-"Count/tick/action/damage-value/trade/breed MCAPI delay whitelist parser PASS (12 valid, $count rejected); no load/runtime proof"
+"Count/tick/action/damage-value/trade/breed/health MCAPI delay whitelist parser PASS (13 valid, $count rejected); no load/runtime proof"

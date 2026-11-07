@@ -1,6 +1,7 @@
 import json
 
 from test_analytics_companion import BASE, Fixture, fixture_writer
+from test_stats_view import BROKEN as BROKEN_DETAILS
 
 CRAFT = 'll26.60.craft_request_success.v1'
 TRAVEL = 'll26.60.poll_position_delta.v1'
@@ -107,8 +108,8 @@ class ParityActivityTests(Fixture):
 
     def test_broken_sleep_and_sneak_counters(self):
         self.player()
-        self.insert('item_broken_result', BROKEN, 'minecraft:iron_pickaxe', amount=1)
-        self.insert('item_broken_result', BROKEN, 'minecraft:iron_pickaxe', amount=1)
+        self.insert('item_broken_result', BROKEN, 'minecraft:iron_pickaxe', amount=1,details=json.dumps(BROKEN_DETAILS))
+        self.insert('item_broken_result', BROKEN, 'minecraft:iron_pickaxe', amount=1,details=json.dumps(BROKEN_DETAILS))
         # Slot loss alone must not count as broken.
         self.insert('item_hurt_slot_loss', 'll26.60.hurt_slot_empty.v1',
                     'minecraft:iron_pickaxe', amount=1)

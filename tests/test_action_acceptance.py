@@ -9,7 +9,7 @@ import sys
 import unittest
 
 from companion.action_acceptance import (METRICS,SOURCES,DROP_SOURCE,DEATH_SOURCE,MODE_SOURCE,PICKUP_SOURCE,
-    JUMP_SOURCE,KILL_SOURCE,USE_SOURCE,HURT_SOURCE,BUSY_START,BUSY_END,action_totals,check_expected,check_run,
+    JUMP_SOURCE,JUMP_EVENT_SOURCE,KILL_SOURCE,USE_SOURCE,HURT_SOURCE,BUSY_START,BUSY_END,action_totals,check_expected,check_run,
     expected_metrics,check_api,verify_http_dom,owned_file,PROJECT,check_session,action_periods)
 from test_analytics_companion import Fixture,fixture_writer,BASE,NOW
 
@@ -129,7 +129,7 @@ class ActionEvidenceTests(unittest.TestCase):
         self.assertEqual(totals['confirmed_deaths'],1);self.assertEqual(totals['pickup_inventory_items'],3)
         self.assertEqual(totals['use_inventory_loss'],1);self.assertEqual(totals['jump_impulses'],1)
         self.assertTrue(all(totals[k]==2 for k in ('sprint_starts','sprint_stops','sneak_starts','sneak_stops')))
-        self.assertEqual(sources,set(SOURCES)-{DROP_SOURCE,HURT_SOURCE})
+        self.assertEqual(sources,set(SOURCES)-{DROP_SOURCE,HURT_SOURCE,JUMP_EVENT_SOURCE})
         for action in actions:
             bad=action|{'details_json':'{}'}
             with self.subTest(source=action['cause']),self.assertRaises(ValueError):action_totals(markers([bad]),ACTOR,BASE,BASE+10000)

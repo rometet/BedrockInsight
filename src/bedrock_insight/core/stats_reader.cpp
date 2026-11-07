@@ -1,7 +1,17 @@
 #include "bedrock_insight/core/stats_reader.hpp"
+#include "bedrock_insight/core/block_record.hpp"
+#include "bedrock_insight/core/broken_record.hpp"
 #include "bedrock_insight/core/closed_session_time.hpp"
 #include "bedrock_insight/core/interaction_observation.hpp"
 #include "bedrock_insight/core/killed_by_sql.hpp"
+#include "bedrock_insight/core/travel_sql.hpp"
+#include "bedrock_insight/core/world_tick_sql.hpp"
+#include "bedrock_insight/core/fish_bucket_sql.hpp"
+#include "bedrock_insight/core/raid_effect_sql.hpp"
+#include "bedrock_insight/core/absorption_sql.hpp"
+#include "bedrock_insight/core/health_loss_sql.hpp"
+#include "bedrock_insight/core/rest_sql.hpp"
+#include "bedrock_insight/core/resistance_sql.hpp"
 
 #include <chrono>
 #include <algorithm>
@@ -83,10 +93,11 @@ std::string const& custom_type_query() {
         "WHEN 'happy_ghast' THEN 'minecraft:happy_ghast_one_cm' "
         "WHEN 'walk_on_water' THEN 'minecraft:walk_on_water_one_cm' "
         "WHEN 'walk_under_water' THEN 'minecraft:walk_under_water_one_cm' ELSE NULL END AS key, amount AS value "
-        "FROM events WHERE actor_id=:id AND event_kind='player_travel_distance' "
-        "AND cause='ll26.60.poll_position_delta.v1' AND typeof(amount)='integer' AND amount>0 "
+        "FROM events WHERE actor_id=:id AND ") + kTravelPredicate + std::string(
+        " "
         "UNION ALL SELECT 'minecraft:jump', amount FROM events WHERE actor_id=:id "
-        "AND event_kind='player_jump_impulse' AND cause='ll26.60.jump_pos_delta.v1' "
+        "AND event_kind='player_jump_impulse' "
+        "AND cause IN ('ll26.60.jump_pos_delta.v1','ll26.60.player_jump_event.v1') "
         "AND typeof(amount)='integer' AND amount=1 "
         "UNION ALL SELECT 'minecraft:mob_kills', 1 FROM events WHERE actor_id=:id "
         "AND event_kind='direct_kill_observation' AND secondary_type='mob' "
@@ -107,14 +118,10 @@ std::string const& custom_type_query() {
         "UNION ALL SELECT 'minecraft:sneak_time', amount FROM events WHERE actor_id=:id "
         "AND event_kind='player_sneak_time' AND cause='ll26.60.sneak_duration.v1' "
         "AND typeof(amount)='integer' AND amount>0 "
-        // Real health damage in vanilla tenths, attributed by the engine's own
-        // damaging-entity id. Attack actions are never substituted here.
-        "UNION ALL SELECT 'minecraft:damage_taken', amount FROM events WHERE actor_id=:id "
-        "AND event_kind='player_damage_taken' AND cause='ll26.60.actor_hurt_event.v1' "
-        "AND typeof(amount)='integer' AND amount>0 "
-        "UNION ALL SELECT 'minecraft:damage_dealt', amount FROM events WHERE actor_id=:id "
-        "AND event_kind='player_damage_dealt' AND cause='ll26.60.actor_hurt_real_damage.v1' "
-        "AND typeof(amount)='integer' AND amount>0 "
+        // HEALTH attribute deltas only. Never sum legacy pre-origin amounts
+        // with the observed post-origin HP change.
+        "UNION ALL SELECT primary_type,amount FROM events WHERE actor_id=:id AND ")+health_loss_predicate()+std::string(
+        " "
         // Confirmed block interactions. Every producer is post-origin, so the
         // cause alone already proves the success condition upstream uses; the
         // key list keeps unproduced keys out of the projection.
@@ -146,15 +153,22 @@ std::string const& custom_type_query() {
         "AND event_kind='player_interaction_result' AND cause='ll26.60.enchant_output_transfer.v1' "
         "AND primary_type='minecraft:enchant_item' AND secondary_type='enchantment' "
         "AND typeof(amount)='integer' AND amount=1 "
-        // World time: cumulative real Level ticks persisted by the busy-tick
-        // sampler. This is a WORLD value shared by every player (as in vanilla),
-        // NOT the player's play_time. It only counts ticks observed by this
-        // capture and never extends an offline/open session to wall clock.
-        "UNION ALL SELECT 'minecraft:total_world_time', SUM(amount) FROM events "
-        "WHERE event_kind='server_tick' AND cause='ll26.60.busytick.v1' "
-        "AND typeof(amount)='integer' AND amount>0 "
+        "UNION ALL SELECT 'minecraft:fish_caught',amount FROM events WHERE actor_id=:id AND "
+        + std::string(kFishBucketPredicate) +
+        "UNION ALL SELECT primary_type,amount FROM events WHERE actor_id=:id AND "
+        + std::string(kRaidEffectPredicate) +
+        "UNION ALL SELECT primary_type,amount FROM events WHERE actor_id=:id AND "
+        + std::string(kAbsorptionPredicate) +
+        "UNION ALL SELECT primary_type,amount FROM events WHERE actor_id=:id AND "
+        + std::string(kResistancePredicate) +
+        "UNION ALL SELECT 'minecraft:time_since_rest',amount FROM (SELECT amount,details_json FROM events WHERE actor_id=:id AND "
+        + kRestPredicate + std::string(" ORDER BY occurred_at_ms DESC,event_id DESC LIMIT 1) WHERE json_extract(details_json,'$.baseline_known')=1 ") +
+        // Snapshot value, not SUM(busy samples) or MAX across restarted worlds.
+        // Shared by every known player; absence is not a fabricated zero.
+        "UNION ALL SELECT 'minecraft:total_world_time', amount FROM (SELECT amount FROM events WHERE "
+        + kWorldTickPredicate + std::string(" ORDER BY occurred_at_ms DESC,event_id DESC LIMIT 1) "
         ") WHERE key IS NOT NULL AND value IS NOT NULL GROUP BY key "
-        "ORDER BY value DESC, key COLLATE BINARY";
+        "ORDER BY value DESC, key COLLATE BINARY");
     return sql;
 }
 
@@ -163,10 +177,11 @@ std::string const& custom_type_query() {
 char const* type_query(StatsCategory category) {
     switch (category) {
     case StatsCategory::Mined:
-        return "SELECT primary_type AS key, SUM(amount) AS value FROM events "
-               "WHERE actor_id=:id AND event_kind='block_mined_result' "
-               "AND cause='ll26.60.gamemode_destroy_block.v1' AND typeof(amount)='integer' AND amount>0 "
-               "GROUP BY primary_type ORDER BY value DESC, key COLLATE BINARY";
+        {
+            static std::string const sql=std::string("SELECT primary_type AS key,SUM(amount) AS value FROM events WHERE actor_id=:id AND ")+
+                kMinedRecordPredicate+" GROUP BY primary_type ORDER BY value DESC,key COLLATE BINARY";
+            return sql.c_str();
+        }
     case StatsCategory::Crafted:
         return "SELECT primary_type AS key, SUM(amount) AS value FROM events "
                "WHERE actor_id=:id AND event_kind='item_craft_result' "
@@ -202,10 +217,8 @@ char const* type_query(StatsCategory category) {
             return sql.c_str();
         }
     case StatsCategory::Broken:
-        return "SELECT primary_type AS key, COUNT(*) AS value FROM events "
-               "WHERE actor_id=:id AND event_kind='item_broken_result' "
-               "AND cause='ll26.60.durability_item_destroyed.v1' AND typeof(amount)='integer' AND amount=1 "
-               "GROUP BY primary_type ORDER BY value DESC, key COLLATE BINARY";
+        {static std::string const sql=std::string("SELECT primary_type AS key,COUNT(*) AS value FROM events WHERE actor_id=:id AND ")
+            +kBrokenRecordPredicate+" GROUP BY primary_type ORDER BY value DESC,key COLLATE BINARY";return sql.c_str();}
     case StatsCategory::Custom:
         return custom_type_query().c_str();
     default:
@@ -216,9 +229,11 @@ char const* type_query(StatsCategory category) {
 char const* ranking_query(StatsCategory category) {
     switch (category) {
     case StatsCategory::Mined:
-        return "SELECT actor_id, SUM(amount) AS value FROM events WHERE event_kind='block_mined_result' "
-               "AND cause='ll26.60.gamemode_destroy_block.v1' AND typeof(amount)='integer' AND amount>0 "
-               "GROUP BY actor_id";
+        {
+            static std::string const sql=std::string("SELECT actor_id,SUM(amount) AS value FROM events WHERE ")+
+                kMinedRecordPredicate+" GROUP BY actor_id";
+            return sql.c_str();
+        }
     case StatsCategory::Crafted:
         return "SELECT actor_id, SUM(amount) AS value FROM events WHERE event_kind='item_craft_result' "
                "AND cause IN ('ll26.60.craft_request_success.v1','ll26.60.created_output_transfer.v1',"
@@ -248,9 +263,8 @@ char const* ranking_query(StatsCategory category) {
             return sql.c_str();
         }
     case StatsCategory::Broken:
-        return "SELECT actor_id, COUNT(*) AS value FROM events WHERE event_kind='item_broken_result' "
-               "AND cause='ll26.60.durability_item_destroyed.v1' AND typeof(amount)='integer' AND amount=1 "
-               "GROUP BY actor_id";
+        {static std::string const sql=std::string("SELECT actor_id,COUNT(*) AS value FROM events WHERE ")
+            +kBrokenRecordPredicate+" GROUP BY actor_id";return sql.c_str();}
     default:
         return nullptr;
     }
@@ -274,8 +288,8 @@ std::string custom_ranking_query(std::string_view key, std::string& error) {
     };
     for (auto const& entry : kTravel) {
         if (entry.key == key) {
-            return "SELECT actor_id, SUM(amount) AS value FROM events "
-                   "WHERE event_kind='player_travel_distance' AND cause='ll26.60.poll_position_delta.v1' "
+            return std::string("SELECT actor_id, SUM(amount) AS value FROM events WHERE ") + kTravelPredicate +
+                   " "
                    "AND primary_type='" + std::string(entry.mode) + "' "
                    "AND typeof(amount)='integer' AND amount>0 GROUP BY actor_id";
         }
@@ -292,15 +306,9 @@ std::string custom_ranking_query(std::string_view key, std::string& error) {
                    "AND typeof(amount)='integer' AND amount>0 GROUP BY actor_id";
         }
     }
-    if (key == "minecraft:damage_taken") {
-        return "SELECT actor_id, SUM(amount) AS value FROM events WHERE event_kind='player_damage_taken' "
-               "AND cause='ll26.60.actor_hurt_event.v1' AND typeof(amount)='integer' AND amount>0 "
-               "GROUP BY actor_id";
-    }
-    if (key == "minecraft:damage_dealt") {
-        return "SELECT actor_id, SUM(amount) AS value FROM events WHERE event_kind='player_damage_dealt' "
-               "AND cause='ll26.60.actor_hurt_real_damage.v1' AND typeof(amount)='integer' AND amount>0 "
-               "GROUP BY actor_id";
+    if (key == "minecraft:damage_taken" || key == "minecraft:damage_dealt") {
+        return "SELECT actor_id,SUM(amount) AS value FROM events WHERE "+health_loss_predicate()+
+            " AND primary_type='"+std::string(key)+"' GROUP BY actor_id";
     }
     if (key == "minecraft:drop") {
         return "SELECT actor_id, SUM(amount) AS value FROM events WHERE event_kind='item_drop_result' "
@@ -309,7 +317,8 @@ std::string custom_ranking_query(std::string_view key, std::string& error) {
     }
     if (key == "minecraft:jump") {
         return "SELECT actor_id, COUNT(*) AS value FROM events WHERE event_kind='player_jump_impulse' "
-               "AND cause='ll26.60.jump_pos_delta.v1' AND typeof(amount)='integer' AND amount=1 GROUP BY actor_id";
+               "AND cause IN ('ll26.60.jump_pos_delta.v1','ll26.60.player_jump_event.v1') "
+               "AND typeof(amount)='integer' AND amount=1 GROUP BY actor_id";
     }
     if (key == "minecraft:mob_kills") {
         return "SELECT actor_id, COUNT(*) AS value FROM events WHERE event_kind='direct_kill_observation' "
@@ -375,6 +384,28 @@ std::string custom_ranking_query(std::string_view key, std::string& error) {
         error = "minecraft:total_world_time is a world value and is not per-player rankable";
         return {};
     }
+    if (key == "minecraft:fish_caught") {
+        return std::string("SELECT actor_id,COUNT(*) AS value FROM events WHERE ")+
+            kFishBucketPredicate+" GROUP BY actor_id";
+    }
+    if (key == "minecraft:raid_trigger" || key == "minecraft:raid_win") {
+        return std::string("SELECT actor_id,COUNT(*) AS value FROM events WHERE primary_type='")+
+            std::string(key)+"' AND "+kRaidEffectPredicate+" GROUP BY actor_id";
+    }
+    if (key == "minecraft:damage_absorbed" || key == "minecraft:damage_dealt_absorbed") {
+        return std::string("SELECT actor_id,SUM(amount) AS value FROM events WHERE primary_type='")+
+            std::string(key)+"' AND "+kAbsorptionPredicate+" GROUP BY actor_id";
+    }
+    if(key=="minecraft:time_since_rest") {
+        return std::string("SELECT actor_id,amount AS value FROM (SELECT actor_id,amount,details_json,")+
+            "ROW_NUMBER() OVER(PARTITION BY actor_id ORDER BY occurred_at_ms DESC,event_id DESC) AS rn FROM events WHERE "+
+            kRestPredicate+
+            ") WHERE rn=1 AND json_extract(details_json,'$.baseline_known')=1";
+    }
+    if(key=="minecraft:damage_resisted" || key=="minecraft:damage_dealt_resisted") {
+        return std::string("SELECT actor_id,SUM(amount) AS value FROM events WHERE primary_type='")+
+            std::string(key)+"' AND "+kResistancePredicate+" GROUP BY actor_id";
+    }
     if (key.empty()) {
         error = "custom ranking requires an explicit stat key";
     } else {
@@ -404,6 +435,42 @@ bool StatsReader::open(std::string& error) {
         return false;
     }
     sqlite_.busy_timeout(db_, 50);
+    auto registered=sqlite3_create_function_v2(db_,"bi_block_details",5,SQLITE_UTF8|SQLITE_DETERMINISTIC|SQLITE_INNOCUOUS,
+        nullptr,[](sqlite3_context* context,int count,sqlite3_value** args) noexcept {
+            bool valid=false;
+            try {
+                if(count==5) {
+                    std::string_view fields[5];bool text=true;
+                    constexpr int limits[]={768,6,128,64,9};
+                    for(int i=0;i<5;++i) {
+                        int size=sqlite3_value_bytes(args[i]);
+                        if(sqlite3_value_type(args[i])!=SQLITE_TEXT || size>limits[i]){text=false;break;}
+                        auto data=sqlite3_value_text(args[i]);if(!data){text=false;break;}
+                        fields[i]={reinterpret_cast<char const*>(data),static_cast<std::size_t>(size)};
+                    }
+                    valid=text && valid_block_record(fields[0],fields[1],fields[2],fields[3],fields[4]);
+                }
+            }catch(...){}
+            sqlite3_result_int(context,valid?1:0);
+        },nullptr,nullptr,nullptr);
+    if(registered!=SQLITE_OK){error="block evidence validator registration failed";sqlite_.close(db_);db_=nullptr;return false;}
+    registered=sqlite3_create_function_v2(db_,"bi_broken_details",4,SQLITE_UTF8|SQLITE_DETERMINISTIC|SQLITE_INNOCUOUS,
+        nullptr,[](sqlite3_context* context,int count,sqlite3_value** args) noexcept {
+            bool valid=false;
+            try {
+                if(count==4){std::string_view fields[4];bool text=true;constexpr int limits[]={1024,128,64,14};
+                    for(int i=0;i<4;++i){
+                        if(sqlite3_value_type(args[i])!=SQLITE_TEXT){text=false;break;}
+                        auto size=sqlite3_value_bytes(args[i]);if(size<0 || size>limits[i]){text=false;break;}
+                        auto data=sqlite3_value_text(args[i]);if(!data){text=false;break;}
+                        fields[i]={reinterpret_cast<char const*>(data),static_cast<std::size_t>(size)};
+                    }
+                    valid=text && valid_broken_record(fields[0],fields[1],fields[2],fields[3]);
+                }
+            }catch(...){}
+            sqlite3_result_int(context,valid?1:0);
+        },nullptr,nullptr,nullptr);
+    if(registered!=SQLITE_OK){error="broken evidence validator registration failed";sqlite_.close(db_);db_=nullptr;return false;}
     return true;
 }
 
@@ -469,7 +536,7 @@ bool StatsReader::player_summary(std::string_view player_id, StatsCategory categ
         auto* key = sqlite_.column_text(statement.value, 0);
         row.key = key == nullptr ? "" : key;
         row.value = sqlite_.column_int64(statement.value, 1);
-        if (row.key.empty() || row.value <= 0) continue;
+        if (row.key.empty() || row.value < 0 || (row.value == 0 && row.key != "minecraft:total_world_time" && row.key != "minecraft:time_since_rest")) continue;
         if(++result.row_count>100000){error="type cardinality exceeds reader budget";result.rows.clear();return false;}
         if(result.total_available)result.total = row.value > std::numeric_limits<std::int64_t>::max()-result.total
             ? std::numeric_limits<std::int64_t>::max() : result.total+row.value;
@@ -513,6 +580,15 @@ bool StatsReader::player_summary(std::string_view player_id, StatsCategory categ
 bool StatsReader::ranking(StatsCategory category, std::string_view custom_key, std::size_t offset,
     std::size_t limit, std::vector<RankingEntry>& result, std::string& error) const {
     result.clear();
+    StatRankingPage page;
+    if (!ranking_page(category, custom_key, offset, limit, page, error)) return false;
+    result = std::move(page.rows);
+    return true;
+}
+
+bool StatsReader::ranking_page(StatsCategory category, std::string_view custom_key, std::size_t offset,
+    std::size_t limit, StatRankingPage& result, std::string& error) const {
+    result = {};
     error.clear();
     if(limit<1 || limit>100 || offset>100000){error="ranking page outside bounds";return false;}
     std::string source;
@@ -532,9 +608,11 @@ bool StatsReader::ranking(StatsCategory category, std::string_view custom_key, s
     std::lock_guard lock(mutex_);
     if (db_ == nullptr) { error = "stats reader is not open"; return false; }
     QueryBudget budget(db_);
-    std::string sql = std::string("SELECT r.value,p.last_name FROM (") + source
-        + ") r JOIN players p ON p.player_id=r.actor_id WHERE r.value>0 "
-          "ORDER BY r.value DESC,p.last_name COLLATE BINARY,r.actor_id LIMIT ? OFFSET ?";
+    std::string sql = std::string("WITH eligible AS (SELECT r.value,p.last_name,r.actor_id FROM (") + source
+        + ") r JOIN players p ON p.player_id=r.actor_id WHERE r.value>0), "
+          "page AS (SELECT * FROM eligible ORDER BY value DESC,last_name COLLATE BINARY,actor_id LIMIT ? OFFSET ?) "
+          "SELECT page.value,page.last_name,totals.n FROM (SELECT COUNT(*) AS n FROM eligible) totals "
+          "LEFT JOIN page ON 1 ORDER BY page.value DESC,page.last_name COLLATE BINARY,page.actor_id";
     Statement statement;
     if (!prepare(sqlite_, db_, sql.c_str(), statement, error)
         || sqlite_.bind_int64(statement.value, 1, static_cast<long long>(limit)) != sqlite_api::kOk
@@ -544,13 +622,18 @@ bool StatsReader::ranking(StatsCategory category, std::string_view custom_key, s
     }
     int step;
     while ((step=sqlite_.step(statement.value)) == sqlite_api::kRow) {
+        result.total_entries = static_cast<std::size_t>(sqlite_.column_int64(statement.value, 2));
         RankingEntry entry;
         entry.value = sqlite_.column_int64(statement.value, 0);
         auto* name = sqlite_.column_text(statement.value, 1);
         entry.display_name = name == nullptr ? "" : name;
-        if (entry.value > 0) result.push_back(std::move(entry));
+        // The LEFT JOIN sentinel has NULL value (column_int64 -> 0). It keeps
+        // totals available on empty/out-of-range pages, never a zero-score row.
+        if (entry.value > 0) result.rows.push_back(std::move(entry));
     }
-    if(step!=sqlite_api::kDone){error=sqlite_.errmsg(db_);result.clear();return false;}
+    if(step!=sqlite_api::kDone){error=sqlite_.errmsg(db_);result={};return false;}
+    result.offset=offset;
+    result.limit=limit;
     return true;
 }
 

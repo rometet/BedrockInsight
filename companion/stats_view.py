@@ -7,6 +7,15 @@ import time
 
 from .analytics import CTE, period_bounds, snapshot, valid_item_type
 from .stats_catalog import CATEGORIES, CUSTOM, type_label
+from .travel_source import TRAVEL_V1, TRAVEL_V2, valid_travel_v2
+from . import world_tick_source
+from . import fish_bucket_source
+from . import raid_effect_source
+from . import absorption_source
+from . import health_loss_source
+from . import rest_source
+from . import resistance_source
+from . import broken_source
 
 # Block-interaction CUSTOM keys, reproduced from LK-Stats v0.13.0
 # src/mod/Stats/StatsCustom.h CustomInteractBlockMap. The map is the reader's
@@ -65,7 +74,7 @@ FLOWER_POT_CAUSE = 'll26.60.flower_pot_place.v1'
 NOTE_BLOCK_CAUSE = 'll26.60.noteblock_attack.v1'
 BLOCK_USE_CAUSE = 'll26.60.block_use_success.v1'
 
-# Item producers ported from LK-Stats v0.13.0 PlayerItemStatsHandler.
+# Independent item projections; semantic reference: pinned LK-Stats v0.13.0.
 USE_CONSUMED_CAUSE = 'll26.60.player_use_item_consumed.v1'
 HURT_USED_CAUSE = 'll26.60.item_hurt_used.v1'
 CREATED_OUTPUT_CAUSE = 'll26.60.created_output_transfer.v1'
@@ -74,8 +83,10 @@ TRADE_OUTPUT_CAUSE = 'll26.60.trade_created_output.v1'
 ENCHANT_OUTPUT_CAUSE = 'll26.60.enchant_output_transfer.v1'
 PLAY_RECORD_CAUSE = 'll26.60.play_record_place.v1'
 # Consuming ItemUseMethod names and their pinned 26.60 ordinals.
-USE_METHOD_NAMES = frozenset(('eat', 'consume', 'throw', 'place', 'fill_bottle', 'pour_bucket', 'interact'))
-USE_METHOD_IDS = frozenset((1, 3, 4, 6, 7, 9, 11))
+USE_METHODS = {'eat': 1, 'consume': 3, 'throw': 4, 'place': 6,
+               'fill_bottle': 7, 'pour_bucket': 9, 'interact': 11}
+USE_METHOD_NAMES = frozenset(USE_METHODS)
+DAMAGE_OBSERVATION_KEYS = frozenset(('damage_taken', 'damage_dealt'))
 
 # key -> (cause, producer block type) for the dedicated hooks.
 DEDICATED_INTERACTION_KEYS = {
@@ -106,7 +117,7 @@ def _invalid(_):
 
 def extra_details(cause, primary, secondary, amount, raw):
     """Exact serialized contracts only; a native boolean is not a world-commit proof."""
-    if not isinstance(raw, str) or len(raw) > 4096:
+    if not isinstance(raw, str) or len(raw) > 4096 or (cause in (fish_bucket_source.SOURCE,raid_effect_source.SOURCE,absorption_source.SOURCE,health_loss_source.SOURCE,resistance_source.SOURCE) and len(raw) > 2048):
         return 0
     try:
         d = json.loads(raw, object_pairs_hook=_object, parse_constant=_invalid)
@@ -115,29 +126,30 @@ def extra_details(cause, primary, secondary, amount, raw):
     if not isinstance(d, dict) or type(amount) is not int or not 0 < amount < 2**63:
         return 0
     integer = lambda k: type(d.get(k)) is int and -(2**63) <= d[k] < 2**63
+    if cause == fish_bucket_source.SOURCE:
+        return fish_bucket_source.valid(primary, secondary, amount, d)
+    if cause == raid_effect_source.SOURCE:
+        return raid_effect_source.valid(primary, secondary, amount, d)
+    if cause == absorption_source.SOURCE:
+        return absorption_source.valid(primary, secondary, amount, d)
+    if cause == health_loss_source.SOURCE:
+        return health_loss_source.valid(primary, secondary, amount, d)
+    if cause == resistance_source.SOURCE:
+        return resistance_source.valid(primary,secondary,amount,d)
     if cause == 'll26.60.craft_request_success.v1':
         return int(d.get('hook') == 'CraftHandlerBase::postRequest' and
                    d.get('phase') == 'return_success_results' and d.get('result_type') == primary and
                    integer('quantity') and d['quantity'] == amount and amount <= 4096 and
                    integer('action_type') and 0 <= d['action_type'] < 2**31 and d.get('anvil_like') is False and
                    d.get('per_recipe_nbt_measured') is False and d.get('inventory_commit_verified') is False)
-    if cause == 'll26.60.durability_item_destroyed.v1':
-        return int(amount == 1 and d.get('hook') == 'ItemStackBase::hurtAndBreak' and
-                   d.get('phase') == 'return_true_item_destroyed' and
-                   d.get('scope') == 'main_inventory_same_slot' and
-                   all(integer(k) for k in ('delta_damage', 'max_damage', 'damage_before', 'slots', 'slot',
-                                            'entry_units', 'after_units')) and
-                   0 < d['delta_damage'] < 2**31 and 1 < d['max_damage'] <= 32767 and
-                   0 <= d['damage_before'] <= d['max_damage'] and
-                   d['damage_before']+d['delta_damage'] >= d['max_damage'] and
-                   1 <= d['slots'] <= 128 and 0 <= d['slot'] < d['slots'] and
-                   d['entry_units'] == 1 and d['after_units'] == 0 and d.get('nested') is False and
-                   all(d.get(k) is True for k in ('is_damageable', 'durability_path',
-                                                 'durability_exhausted_verified', 'max_damage_value_exceeded_read')))
+    if cause in (broken_source.V1,broken_source.V2):
+        return int(amount==1 and broken_source.valid_broken_details(raw,primary,cause,secondary))
     if cause == 'll26.60.poll_position_delta.v1':
         return int(d.get('adapter') == 'ServerLevelTickEvent' and d.get('phase') == 'polled_position_delta' and
                    d.get('mode') == primary and integer('distance_cm') and d['distance_cm'] == amount and
                    integer('flush_interval_ms') and d['flush_interval_ms'] == 5000)
+    if cause == TRAVEL_V2:
+        return valid_travel_v2(primary, amount, d.get('last_ms'), raw)
     if cause == 'll26.60.sleep_flag_transition.v1':
         return int(amount == 1 and d.get('adapter') == 'ServerLevelTickEvent' and
                    d.get('phase') == 'sleep_flag_false_to_true' and d.get('success_verified') is True and
@@ -213,7 +225,7 @@ def extra_details(cause, primary, secondary, amount, raw):
                    d.get('hook') == 'Player::$useItem' and d.get('phase') == 'post_origin_consumed' and
                    d.get('item_type') == primary and secondary in USE_METHOD_NAMES and method == secondary and
                    integer('use_method') and method in USE_METHOD_NAMES and
-                   d['use_method'] in USE_METHOD_IDS and d.get('consume_item') is True and
+                   d['use_method'] == USE_METHODS[method] and d.get('consume_item') is True and
                    d.get('nested') is False and
                    (secondary != 'interact' or primary == 'minecraft:bone_meal'))
     if cause == HURT_USED_CAUSE:
@@ -230,7 +242,8 @@ def extra_details(cause, primary, secondary, amount, raw):
                    d.get('phase') == 'post_origin_transfer_success' and d.get('item_type') == primary and
                    integer('transfer_amount') and d['transfer_amount'] == amount and
                    d.get('branch') == secondary and integer('screen_container_type') and
-                   d.get('net_result') == 0 and d.get('nested') is False and
+                   d['screen_container_type'] == {'inventory': -1, 'workbench': 1, 'trade': 15}[secondary] and
+                   integer('net_result') and d['net_result'] == 0 and d.get('nested') is False and
                    d.get('inventory_commit_verified') is True)
     if cause == FURNACE_OUTPUT_CAUSE:
         block = d.get('block_type')
@@ -260,20 +273,22 @@ def extra_details(cause, primary, secondary, amount, raw):
         return int(amount == 1 and primary == 'minecraft:play_record' and valid_item_type(secondary) and
                    d.get('hook') == 'Player::$useItem' and d.get('phase') == 'post_origin_place' and
                    d.get('custom_key') == 'minecraft:play_record' and d.get('item_type') == secondary and
-                   d.get('use_method') == 6 and d.get('music_disc') is True and d.get('nested') is False)
+                   integer('use_method') and d['use_method'] == 6 and d.get('music_disc') is True and d.get('nested') is False)
     if cause == 'll26.60.actor_hurt_event.v1':
-        return int(0 < amount < 2**31 and primary.startswith('cause:') and
+        return int(0 < amount < 2**31 and isinstance(primary, str) and
                    secondary in ('entity', 'environment') and
                    d.get('adapter') == 'ActorHurtEvent' and d.get('phase') == 'pre_origin_amount' and
                    integer('cause_code') and -1 <= d['cause_code'] <= 34 and
+                   primary == 'cause:' + str(d['cause_code']) and
                    integer('damaging_entity_type') and d.get('units') == 'tenths' and
                    isinstance(d.get('entity_source'), bool) and
+                   d['entity_source'] == (secondary == 'entity') and
                    d.get('absorbed_or_resisted_measured') is False)
     if cause == 'll26.60.actor_hurt_real_damage.v1':
-        return int(0 < amount < 2**31 and valid_item_type(primary) and primary != 'minecraft:player' and
-                   isinstance(secondary, str) and secondary.startswith('cause:') and
+        return int(0 < amount < 2**31 and valid_item_type(primary) and
                    d.get('adapter') == 'ActorHurtEvent' and d.get('phase') == 'pre_origin_amount' and
                    integer('cause_code') and -1 <= d['cause_code'] <= 34 and
+                   secondary == 'cause:' + str(d['cause_code']) and
                    d.get('units') == 'tenths' and
                    d.get('attribution') == 'damaging_entity_unique_id' and
                    d.get('attack_action_substituted') is False and
@@ -284,7 +299,7 @@ def extra_details(cause, primary, secondary, amount, raw):
                    d.get('phase') == 'post_origin_trade_result_push' and
                    integer('src_container') and integer('dst_container') and integer('transfer_amount') and
                    d['src_container'] in (33, 49) and d['dst_container'] in (12, 28, 29, 59) and
-                   0 <= d['transfer_amount'] <= 255 and d.get('net_result') == 0 and
+                   0 < d['transfer_amount'] <= 255 and integer('net_result') and d['net_result'] == 0 and
                    d.get('trade_commit_verified') is True and
                    d.get('villager_entity_identified') is False and
                    d.get('ingredient_transfer_excluded') is True)
@@ -306,15 +321,15 @@ def _events(table, value='amount', *, extra=False, where='1'):
 
 
 CATEGORY_SOURCES = {
-    'mined': Projection(_events('mined'), 'GameModeのtrue応答と同座標のブロック種類変化のみ。全経路・保存完了ではありません。',
-                        ('ll26.60.gamemode_destroy_block.v1',)),
-    'broken': Projection(_events('broken', extra=True), '主所持品の同一スロット、耐久閾値・1→0消失の報告。防具・副手・全破損の網羅性は未検証。',
-                         ('ll26.60.durability_item_destroyed.v1',)),
+    'mined': Projection(_events('mined'), 'GameModeのtrue応答と同座標の種類変化のみ。v2は同じ未削除Player/Level/次元を確認。旧v1はその確認の証明でなく、全経路・保存完了・専属因果ではありません。',
+                        ('ll26.60.gamemode_destroy_block.v2','ll26.60.gamemode_destroy_block.v1')),
+    'broken': Projection(_events('broken'), '耐久処理true応答・入力閾値・同じスロットの1→0観測。v2は未削除Player/Level/次元と主所持品/副手/防具4枠を照合。旧v1は主所持品のみ。全破損・専属因果・最終保存ではありません。',
+                         (broken_source.V2,broken_source.V1)),
     'crafted': Projection(_events('crafted', extra=True),
-                          'CreatedOutputContainerからの成功転送量と、かまど/燻製器の完成品取り出し差分。全クラフト経路・レシピNBTは未検証。',
+                          '成功要求の出力申告、CreatedOutputContainer成功転送量、かまど/燻製器の処理前モデル差分をソース定義別に含みます。全行の最終コミット・全クラフト経路・レシピNBTは未検証。',
                           (CREATED_OUTPUT_CAUSE, FURNACE_OUTPUT_CAUSE, 'll26.60.craft_request_success.v1')),
-    'used': Projection(_events('use_results', '1'),
-                       'Player::$useItemの消費系方法、または非防具の耐久消費が成功した後の観測。効果完了・全用途の成功ではありません。',
+    'used': Projection(_events('use_results', '1', where="cause='ll26.60.gamemode_use_return.v1' OR bi_stats_details(cause,primary_type,secondary_type,amount,details_json)"),
+                       'GameMode true応答・所持品照合、consumeItem引数がtrueのPlayer使用処理終了、非防具耐久処理true応答の観測。効果完了・実消費・全用途の成功ではありません。',
                        (USE_CONSUMED_CAUSE, HURT_USED_CAUSE, 'll26.60.gamemode_use_return.v1')),
     'picked_up': Projection(_events('pickups'), 'take true応答中の同一主所持品・同種類の増加差分。全拾得・永続転送ではありません。',
                             ('ll26.60.take_inventory_delta.v1',)),
@@ -327,10 +342,21 @@ CATEGORY_SOURCES = {
                             ('ll26.60.resolved_killer_dead_transition.v1',)),
 }
 
-CUSTOM_SOURCES = {}
+CUSTOM_SOURCES = {
+    'time_since_rest': Projection(rest_source.SQL,rest_source.DEFINITION,(rest_source.SOURCE,)),
+    'total_world_time': Projection('',
+        'Levelの実サーバーtick IDの最終観測値。期間内で最後のスナップショットを採用し、合計や最大値にはしません。'
+        '全プレイヤーに共通の値で、個人のプレイ時間・順位・期間中の経過tickではありません。'
+        '再起動を跨ぐ連続性は未検証。停止後・欠測中は壁時計で補いません。',
+        (world_tick_source.SOURCE,)),
+}
+for _key in ('damage_resisted','damage_dealt_resisted'):
+    CUSTOM_SOURCES[_key]=Projection('SELECT actor_id,:key AS type,value,first_ms,last_ms FROM ('+
+        _events('view_events',extra=True,where="event_kind='player_interaction_result' AND cause=:cause AND primary_type=:key")+')',
+        resistance_source.DEFINITION,(resistance_source.SOURCE,))
 for _key, _table, _value, _where, _extra, _source, _definition in (
     ('drop', 'drops', 'amount', '1', False, 'll26.60.player_drop_returned_true.v1', CATEGORY_SOURCES['dropped'].definition),
-    ('jump', 'jumps', '1', '1', False, 'll26.60.jump_pos_delta.v1', '上向き加速の処理後観測。空中移動完了数ではありません。'),
+    ('jump', 'jumps', '1', '1', False, 'll26.60.player_jump_event.v1', 'LeviLaminaのPlayerJumpEventによるジャンプ入力成立観測。本家LK-Statsと同系統。後続キャンセルや空中移動完了の独立検証ではありません。'),
     ('deaths', 'deaths', '1', '1', False, 'll26.60.player_dead_transition.v1', '同じ未削除Playerの死亡フラグ成立。処理前通知は含みません。'),
     ('sleep_in_bed', 'sleeps', '1', "primary_type='minecraft:sleep_in_bed'", True, 'll26.60.sleep_flag_transition.v1', 'サーバーtickで睡眠フラグfalse→true。睡眠時間は未計測。'),
     ('sneak_time', 'sneaks', 'amount', "primary_type='sneak'", True, 'll26.60.sneak_duration.v1', 'スニーク通知間の実時間を50msへ換算（各正区間の最小値1）。保存時刻に全量を配賦し期間境界は分割しません。真の継続サーバーtickではありません。'),
@@ -347,9 +373,19 @@ for _mode in ('walk', 'sprint', 'crouch', 'swim', 'fly', 'aviate', 'fall', 'clim
               'walk_on_water', 'walk_under_water'):
     CUSTOM_SOURCES[_mode+'_one_cm'] = Projection('SELECT actor_id,:key AS type,value,first_ms,last_ms FROM ('+
         _events('travels', extra=True, where='primary_type=:mode')+')',
-        '5秒単位のサーバー位置差分観測。保存時刻で期間分けし、境界を跨ぐバッチの距離は復元しません。全モード・全テレポート除外は未検証。',
-        ('ll26.60.poll_position_delta.v1',))
+        'サーバー位置差分の限定観測。v1の旧定義は保持。v2は連続する生存・同次元・同乗り物の観測だけを窓内合算し、最終観測時刻の期間へ配賦。1秒超gap/10block超差分/JST日境界は繋がず、飛行・泳ぎ・騎乗は3D、水系は排他的。全テレポート排除・全距離ではありません。',
+        (TRAVEL_V1, TRAVEL_V2))
 for _key, _cause, _definition in (
+    ('damage_absorbed', absorption_source.SOURCE,
+     '被ダメージ処理の前後で同じPlayer・吸収属性インスタンスの減少を観測。DamageProcessed型、親Mob呼出し最大1回、それ以外の再入・次元/属性交換は除外。各属性値を0.001HPへ丸め、その差を0.1HPへ丸めます。通知量からの推計・最終HP損失ではなく、他Modの同時変更の因果分離・全被ダメージ経路・永続コミットは未証明。'),
+    ('damage_dealt_absorbed', absorption_source.SOURCE,
+     '同じ被ダメージ処理内で観測した相手の吸収属性減少を、同Levelに解決した直接Playerまたは子飛び道具のsource Playerへ帰属。各属性値を0.001HPへ丸め、その差を0.1HPへ丸めます。最終HP損失ではなく、環境・自己・間接不明・再入・失効は欠測。全加害量や他Modの同時変更の因果分離・永続コミットは未証明。'),
+    ('raid_trigger', raid_effect_source.SOURCE,
+     'RaidOmen（効果ID36・600tick）の付与呼出し後に同じ生存Playerで効果の新規成立または値の変化を照合。襲撃の発生・参加・勝利そのものの証明ではありません。コマンドや他Modの付与も区別できず、同値の再付与・再入れ子・異なる期間・全襲撃経路は除外します。'),
+    ('raid_win', raid_effect_source.SOURCE,
+     'VillageHero（効果ID29・48000tick）の付与呼出し後に同じ生存Playerで効果の新規成立または値の変化を照合。襲撃の発生・参加・勝利そのものの証明ではありません。コマンドや他Modの付与も区別できず、同値の再付与・再入れ子・異なる期間・全襲撃経路は除外します。'),
+    ('fish_caught', fish_bucket_source.SOURCE,
+     '水生Mobへの主手相互作用成功と同一呼出し内の水バケツ処理・対象のremovedフラグまたは弱参照解決不可・同じ主所持品の対応バケツ+1を照合。釣り竿の釣果ではありません。弱参照不可だけで消去成功とは断定しません。副手・creative等の増加なし・未知ID・全捕獲や最終永続化は未計測。'),
     ('animals_bred', 'll26.60.breed_offspring.v1',
      'mateの返却offspring非空とlove causeのPlayer解決を報告。子の生存・永続保存・実プレイ帰属は未検証。'),
     ('talked_to_villager', 'll26.60.open_trading_villager.v1',
@@ -387,14 +423,14 @@ for _key in sorted(INTERACTION_KEYS):
          'LK-Stats v0.13.0の専用フック（ケーキ/大釜/植木鉢/音符ブロック）が成功条件を満たした後のみ計数。'),
         ((BLOCK_USE_CAUSE,) if _block_use else (DEDICATED_INTERACTION_KEYS[_key][0],)))
 for _key, _kind, _cause, _definition in (
-    ('damage_taken', 'player_damage_taken', 'll26.60.actor_hurt_event.v1',
-     'ActorHurtEventの実際のダメージ値（1/10単位）。吸収・耐性後の内訳と最終適用HPは未計測。'),
-    ('damage_dealt', 'player_damage_dealt', 'll26.60.actor_hurt_real_damage.v1',
-     'ActorHurtEventの実ダメージ値を加害ActorUniqueID→解決済みPlayerへ帰属。攻撃回数で代用しません。'),
+    ('damage_taken', 'player_interaction_result', health_loss_source.SOURCE,
+     '同一hurt呼出でHEALTH属性の前後減少を観測（0.1HP・丸め）。処理前通知量や吸収量とは合算しません。後段の回復・世界コミット・専属因果・全経路や実機受入は未証明です。'),
+    ('damage_dealt', 'player_interaction_result', health_loss_source.SOURCE,
+     '同一hurtのHEALTH属性減少を、再解決した直接／子飛び道具source Playerへ帰属（0.1HP・丸め）。不明／自己／環境は加害者へ推定計上しません。後段の回復・世界コミット・専属因果・実機受入は未証明です。'),
 ):
     CUSTOM_SOURCES[_key] = Projection(
         'SELECT actor_id,:key AS type,value,first_ms,last_ms FROM ('+
-        _events('view_events', extra=True, where="event_kind='"+_kind+"' AND cause=:cause")+')',
+          _events('view_events', extra=True, where="event_kind='"+_kind+"' AND cause=:cause AND primary_type=:key")+')',
         _definition, (_cause,))
 
 _TIME_CTE = """
@@ -429,12 +465,17 @@ CUSTOM_SOURCES['leave_game'] = Projection("SELECT actor_id,:key AS type,1 AS val
 def catalog():
     return {'categories': [{'id': 'minecraft:'+k, 'label': label, 'unit': unit} for k, label, unit in CATEGORIES],
             'custom': [{'id': 'minecraft:'+k, 'label': label, 'unit': unit,
-                        'projection_supported': k in CUSTOM_SOURCES, 'collection_complete': False}
+                        'observation_stage': 'health_attribute_delta' if k in DAMAGE_OBSERVATION_KEYS else
+                        'derived_resistance_formula' if k in ('damage_resisted','damage_dealt_resisted') else 'source_observation',
+                        'projection_supported': k in CUSTOM_SOURCES, 'collection_complete': False,
+                        'metric_scope': 'world' if k == 'total_world_time' else 'player',
+                        'ranking_supported': k != 'total_world_time'}
                        for k, label, unit in CUSTOM]}
 
 
 def report(analytics, *, category='custom', key=None, period='all', date=None, player=None,
-           search='', type=None, page=0, rank_page=0, limit=20, players_page=0, now_ms=None):
+           search='', type=None, page=0, rank_page=0, limit=20, players_page=0, now_ms=None, type_labels=None):
+    labeler=lambda value:type_label(value,type_labels)
     if not isinstance(category, str) or (key is not None and not isinstance(key, str)):
         raise ValueError('分類またはキーが不正です')
     category = category.removeprefix('minecraft:')
@@ -462,9 +503,13 @@ def report(analytics, *, category='custom', key=None, period='all', date=None, p
             'cause': source.sources[0] if source else '',
             'search': search, 'type': type, 'selected': None, 'limit': limit, 'offset': page*limit,
             'rank_offset': rank_page*limit, 'players_offset': players_page*100}
+    if short == 'total_world_time':
+        return world_tick_source.report(analytics.database, analytics, catalog=catalog(), key=key, unit=unit,
+            selected_label=selected_label, label=label, args=args, player=player, page=page,
+            rank_page=rank_page, players_page=players_page, limit=limit, now_ms=now_ms, definition=source.definition)
     sql = source.sql if source else "SELECT '' AS actor_id,:key AS type,0 AS value,0 AS first_ms,0 AS last_ms WHERE 0"
     prefix = CTE + _TIME_CTE + ', view_source AS ('+sql+"""), view_filtered AS (
- SELECT * FROM view_source WHERE typeof(value)='integer' AND value>0
+ SELECT * FROM view_source WHERE typeof(value)='integer' AND value>=0
  AND typeof(first_ms)='integer' AND typeof(last_ms)='integer'
  AND first_ms>=:start AND last_ms>=first_ms AND last_ms<:end AND last_ms<=:now
  AND EXISTS(SELECT 1 FROM players WHERE player_id=view_source.actor_id)
@@ -472,9 +517,10 @@ def report(analytics, *, category='custom', key=None, period='all', date=None, p
  AND (:type IS NULL OR type=:type)), view_values AS (
  SELECT actor_id,SUM(value) AS value FROM view_filtered GROUP BY actor_id)
 """
+    if short!='time_since_rest':prefix=prefix.replace("typeof(value)='integer' AND value>=0","typeof(value)='integer' AND value>0")
     with snapshot(analytics.database) as db:
         db.create_function('bi_stats_details', 5, extra_details, deterministic=True)
-        db.create_function('bi_stats_label', 1, type_label, deterministic=True)
+        db.create_function('bi_stats_label', 1, labeler, deterministic=True)
         selected = None
         if player:
             for i, row in enumerate(db.execute('SELECT player_id,last_name FROM players ORDER BY player_id LIMIT 100001')):
@@ -503,7 +549,7 @@ def report(analytics, *, category='custom', key=None, period='all', date=None, p
             LIMIT :limit OFFSET :rank_offset''', args)]
         rank_count = db.execute(prefix+'SELECT COUNT(*) FROM view_values WHERE value>0', args).fetchone()[0]
         for r in types:
-            r['label'] = type_label(r['type'])
+            r['label'] = labeler(r['type'])
         for i, r in enumerate(ranking):
             r['key'] = analytics.player_key(r.pop('player_id')); r['name'] = r.pop('last_name')
             r['rank'] = rank_page*limit+i+1
@@ -516,6 +562,11 @@ def report(analytics, *, category='custom', key=None, period='all', date=None, p
             'projection_supported': source is not None, 'status': 'unsupported' if source is None else
             'recorded_observation' if totals['source_rows'] else 'no_record', 'collection_complete': False,
             'native_runtime_acceptance': 'not_attested', 'sources': list(source.sources) if source else [],
+            'aggregation': 'latest_per_player_snapshot' if short=='time_since_rest' else 'sum_observations',
+            'observation_stage': 'health_attribute_delta' if short in DAMAGE_OBSERVATION_KEYS else
+            'derived_resistance_formula' if short in ('damage_resisted','damage_dealt_resisted') else 'source_observation',
+            'resistance_applied_measured': False,
+            'final_world_outcome_verified': False,
             'definition': source.definition if source else '確定結果の読取経路は未対応。既存の試行・処理前通知・enum登録を数値へ昇格しません。',
             'limitations': '全9分類／77キーの収集・実プレイ受入は未完了。未記録は不明、異種単位のCUSTOM総合計は作りません。種類名は独立日本語ラベル＋未知IDの安全な表示。',
             'generated_at_ms': now_ms}

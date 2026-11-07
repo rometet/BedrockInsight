@@ -2,6 +2,1381 @@
 
 PROJECT_STATUS: IN_PROGRESS
 
+## 2026-11-08 Real-player jump retest — event capture PASS, distinct-jump accuracy NOT YET accepted
+
+Rome6882 joined and left a fresh 1.26.60.6 / LL26.60.0 isolated test BDS
+(`.build/isolated-bds/run-b82a0cb06e2d482e8a6204787a3bb5d7`).
+The official candidate DLL SHA256 was
+`4A98698DF60D21001EA4961D6CF61266E57637DFDCBF7AD57A45187E26D2AA28`.
+Closed SQLite integrity check `ok`; one session start/end pair with 9,205ms
+duration. Exactly **27** actual player-generated `player_jump_impulse` rows,
+amount 1 each, cause `ll26.60.player_jump_event.v1`, belong to Rome6882.
+This proves runtime native event -> SQLite persistence, eliminating the prior
+0-event regression. It DOES NOT validate 27 completed jumps. Of 26 gaps,
+11 are below 100ms (some 43-49ms). The pinned
+`C:/Dev/LeviLamina-26.60-Assistant-20261029/src/ll/api/event/player/PlayerJumpEvent.cpp`
+publishes from per-input-packet handling when `Jumping` is present and the
+server-side grounded / positive-delta checks pass. Thus one physical jump may
+lead to multiple event observations. A real-player count-controlled test and
+sound de-duplication/transition policy are required before calling
+`minecraft:jump` a truthful distinct-jump counter. Do not retroactively rewrite
+raw observations. User requested approximately ten jumps, not a precise audited
+number. Grouping by time thresholds is only a diagnostic heuristic.
+Post-exit read-only evidence: `.build/real-player-jump-evidence-20261108.json`.
+Only the owned test BDS PID6160 was gracefully stopped; exit code 0.
+Unrelated BDS PID748 and dashboard were not modified. GUI/API live acceptance
+for the jump value is still unproven. Overall LK-Stats parity remains IN_PROGRESS.
+
+## 2026-11-07 Jump capture correction (real-player regression)
+
+The 2026-11-07 Rome6882 gameplay run recorded zero `player_jump_impulse`
+events despite the operator jumping. The old `Mob::jumpFromGround` direct
+getPosDelta pre/post predicate was not effective in that 26.60 run. Its
+legacy method and `ll26.60.jump_pos_delta.v1` cause remain historical only.
+
+The current `levilamina/player_jump.cpp` now subscribes to LeviLamina
+`PlayerJumpEvent`, matching the upstream LK-Stats v0.13.0 event strategy.
+New cause: `ll26.60.player_jump_event.v1`. Native StatsReader personal
+CUSTOM + ranking, Python analytics and `/stats` projections accept the
+new cause while retaining historical read compatibility. Native/C++
+reader and targeted Python fixture tests passed. This is an observed
+post-auth-input event, not independent proof of a completed jump or that
+later event listeners did not cancel it. Fresh real-player re-test is
+REQUIRED before upgrading the `minecraft:jump` acceptance status.
+
+
+## Analytics Dashboard User Request 2026-11-06
+
+### 2026-11-07 — broken v2 owned offhand/armor capture + strict GUI/API/Web contract (not gameplay accepted)
+
+Extended the existing ItemStackBase::hurtAndBreak hook independently, using
+pinned26.60 public LL Actor::getOffhandSlot/getArmor and ArmorSlot0..3, without
+new hooks, guessed offsets, AGPL implementation reuse, migrations or deployment.
+The old candidate only matched main Inventory stacks; v2 also matches offhand
+and four humanoid armor slots, requiring exactly one entry pointer match.
+
+| Area | Candidate implemented | Not proven / pending |
+| --- | --- | --- |
+| Capture | Entry count1, damageable, max/entry damage and positive input threshold; origin once/true/no reentry; weak samePlayer, mRemoved, sameLevel/dimension before slot reread; same stack1→0 | Actual tool/offhand/armor actions, all break paths, exclusive break causation, final persistence |
+| Evidence | v2 cause + location/slot/type/threshold/frame fields; final_break_verified/world_save_verified:false; no XYZ read | Copies, replacement/reload, unknown ownership, invalid Inventory sizes, removed/dimension transition, other paths can be missed |
+| Native/Web | Shared strict contract per implementation for personal/type/ranking/page-count + actions; duplicate/unknown/type/empty/future/wrong-location rejection; invalid-only null | GUI/other-Mod/HTTP actual-player acceptance; native all-time only, Web retains JST periods |
+| History | v1 rows retained under old main-inventory contract, not upgraded to v2; no data rewrite | Legacy incomplete rows remain stored but no longer accepted by looser native/actions projection |
+| Scope | Japanese GUI/C API/Web limitations; C API additive source_contracts/scope metadata, ABI unchanged | Independent C ABI remains NOT LegacyRemoteCall-compatible; shield-damage key stays MISSING/null |
+
+Non-armor used semantics remain unchanged; its post-origin Player reread also
+now rejects removed/Level/dimension changes. No per-tick database work.
+Private fixture tests cover all four modeled armor slots, offhand/main paths,
+bad threshold/frame/location/types, v1 history, null vs zero, ranking/paging,
+actual authenticated HTTP and production Japanese JS on a synthetic DOM.
+docs/BROKEN_CAPTURE_V2.md, analytics instructions, API docs and matrix updated.
+
+Initial targeted Python run28 had one test error: month date was incorrectly
+YYYY-MM-DD; corrected to YYYY-MM, and fixed selected assertion to totals.value.
+New targeted4 Python tests then PASS1.355s. No production period behavior changed.
+Initial native run-4ed51560d3894549a03b9752dc83ed87 failed compiling the new test:
+getRankStats requires page/limit as well as category/output; fixed test call,
+not the ABI. Next run-d6a9401f5bce4dddae51757b3320a0e3 passed the preceding16
+binaries but new fixture writer.flush failed after an out-of-SQLite-date-range
+future timestamp. Changed test future to year2100 and added writer last_error
+diagnostic. Failed receipts are retained, not called PASS or BDS failures.
+
+Final guarded verification (synthetic/build only, NOT real gameplay):
+
+- Cached toolchain env: BEDROCKINSIGHT_CLANGCL_ROOT=
+  C:/Dev/LL2660Toolchain-20261029/clang+llvm-23.1.4-x86_64-pc-windows-msvc/bin;
+  BEDROCKINSIGHT_SQLITE_ROOT=C:/Users/chihirosub/AppData/Local/.xmake/packages/s/sqlite3/3.54.0+100/b897e7007f3d49769c227e337e14fdef;
+  BEDROCKINSIGHT_XMAKE_PACKAGES=C:/Dev/LL2660BuildCache/.xmake/packages.
+- `./scripts/verify_travel_v2.ps1 -WorldTick -FishBucket -RaidEffect -Absorption -Rest -Resistance -ShieldEvidence -HealthLoss -TypeLabels -BlockRecords -BrokenRecords`:
+  **17 C++ binaries +11 native/SQLite/C API/private-inspector/authenticated
+  HTTP/Japanese synthetic JS readbacks PASS**, at
+  `.build/travel-v2-tests/run-5f14fe31b3cf47db895dc775661c229a/fixture-evidence.json`.
+  Modeled main/offhand/armor + v1 fixture: total5, Alice3/Bob1/Carol1;
+  native personal/rank/pages and Web stats/actions agree; invalid-only null,
+  read-only bytes/integrity, no private IDs. All239 inputs match before/after/current.
+- `./scripts/verify_native_stats_api.ps1`: four real GetProcAddress calls from
+  independent C11 consumer into owned core-only test DLL PASS, at
+  `.build/c-api-tests/run-a9734433d43147b2920cebd90c706008/api-evidence.json`.
+  All73 inputs match before/after/current. No LL/BDS mod load or LRC acceptance.
+- `./scripts/verify_stats_library.ps1`: **183 Python PASS85.012s**, optimized
+  inventory2 PASS0.004s, at
+  `.build/stats-view-tests/run-91c4b533f651429990acc8710946f704/regression.json`.
+  All90 inputs match before/after/current. Playtime/open-crash/JST/rank/auth/
+  no-sample telemetry and prior source-specific tests retained.
+- `./scripts/build_server_candidate.ps1`: **26 native units +prelink +DLL
+  link +strict PE/package PASS**, at
+  `.build/server-candidate/run-8addcc0c4a6a4557b5eaf81544a62dde/candidate-evidence.json`.
+  DLL SHA256 `E5E2DC858D4AA5AF0F41386153131E6E1A3D567A79E9A79B5C2C9BAABEBE2313`;
+  ZIP SHA256 `61F5488043349DA3458C00BEC56700F6A04E7117B16D50CCD785C153D7D929B6`.
+  All125 source/script inputs match current; DLL/ZIP hashes match receipt and
+  actual ZIP language entry matches shared asset50BCF694... . Old-client lib
+  not used. matched_server_sdk_verified/runtime_dependencies_verified/
+  normal_release_evidence/launch_authorized/bds_load_verified all remain false.
+  Candidate is NOT staged or loaded into BDS.
+- `python scripts/audit_lk_parity.py`:96 mandatory rows/zero accepted, at
+  `.build/parity-audit/run-7bb29ac623f34bf28d16734a6dba9e49/inventory.json`.
+  CUSTOM CODE_ONLY72/UNIT_ONLY4/MISSING1 unchanged. `git --no-optional-locks diff --check` PASS.
+  Separate in-memory SQLite check confirmed date(9000000000000000ms)=NULL
+  versus4102444800000ms=2100-01-01. One initial diagnostic command had shell
+  quoting SyntaxError; corrected read-only command succeeded, no file writes.
+
+Read-only final protection audit22:26:28JST: bedrock_server_mod748 start
+2026-11-05T01:38:04+09:00, viewer python28268 start2026-11-06T06:30:51+09:00,
+listener127.0.0.1:18767 unchanged. Protected run-2bbb... DLL SHA256 remains
+`B286F054EF1CCF9D90CABBBF3943543FEA2B6FF78805D2EB7F044FF89D6D8A00`.
+No BDS stop/restart/commands/launch/stage/load, old SQLite edits, persistent
+viewer operations, security/auth/network changes, push or release. MSPT was
+already accepted and NOT repeated. PROJECT_STATUS remains IN_PROGRESS.
+
+Real online-BDS actual-player/SQLite/GUI/other-Mod acceptance still requires
+the authorized normal-host coordinator path. Its last capability check was
+denied by this session's approval=never policy, not by host connectivity or
+the DLL; no repeat/bypass/offline-sandbox online-BDS retry was attempted.
+Shield producer, compatible LRC, complete source coverage/semantics and all96
+real-operation gates are still incomplete, not replaced by fixture success.
+
+### 2026-11-07 — block v2 native frame/position capture + strict mined GUI/API read (not gameplay accepted)
+
+Found a genuine mismatch: native StatsReader accepted mined cause + positive
+amount alone, while Web required same-position state-change JSON and amount1.
+Incomplete/attempt-like rows could therefore inflate native GUI/C API only.
+Added independent bounded block_record.hpp validation shared by native personal,
+type, ranking and page-count queries. No source/license copy from AGPL Stats.
+
+| Area | Candidate enabled | Pending / boundary |
+| --- | --- | --- |
+| Native capture | Existing GameMode hooks, origin once; weak re-resolution, same Player/Level/dimension, mRemoved checked before BlockSource; new v2 causes | Actual 26.60 player operation / cancellation / dimension controls not accepted |
+| Position | Copy observed BlockPos XYZ + dimension into events, no guessed world_id | Existing int8 Position.dimension limits v2 to -1..127; do not wrap128+. v1 default0 is NOT proven position |
+| Evidence | Exactly1 typed row per transition, before/after/hook/phase/scope + new same_player/same_level; bounded JSON/duplicate/unknown/type rejection | Stored fields are a contract, not cryptographic proof against DB editing or other-Mod exclusive causation |
+| History / view | v1 preserved under v1 contract, not upgraded to v2; native GUI/C API/Web expose limited scope/provenance; incomplete-only => null, excluded from rank | Same-position only, adjacent/multi-block placement can be missed; no final-world/whole-category guarantee |
+| Read safety | Read-only SQLite function + fixed SQL, integer1/player/type/time/frame checks; future/negative timestamps excluded; hand column/JSON coherent | Native all-time only; JST day/month/all-time remains Web; existing time-budget/disk limits apply |
+
+New native production builder writes ll26.60.gamemode_destroy_block.v2 and
+ll26.60.gamemode_build_block.v2. No new hook, engine address, migration, per-tick
+DB write or active-server modification. Native minedscope/source_contracts/
+final_world_commit_verified:false metadata is additive, not a C ABI change.
+Web v1/v2 predicates and source metadata updated, with explicit legacy limits.
+Corrected artificial old API fixtures (amount3/emptyJSON) to three amount1
+modeled transitions, without weakening source validation. Tests use production
+builder/writer/reader and private fixture files only.
+
+Initial new Python readback failed because /analytics defaults to day while
+the fixture is historical; explicitly selected all, no production default
+change. Initial C++ fixture run-f8ee1a765e254a8f907f4b096399fd49 aborted, and
+diagnostic run-f65230422a554123a8d1839fead33c80 identified missing actor_name
+in the test-only raw invalid-row INSERT. Fixed the fixture to copy all required
+columns from its owned row and changed the new test's checks to log failures
+without a CRT assert dialog. Neither failure is a BDS/DLL runtime result.
+Targeted6 C++ binaries +2 readbacks then PASS at
+.build/travel-v2-tests/run-9963a9bd0dd141a68c035f0dde630bbe/.
+
+New test coverage includes false frame/reentrancy/origin once, coordinates,
+legacy v1, wrong amount/actor/secondary/cause/primary, duplicate/malformed JSON,
+future rows, invalid-only null/rank omission, stable pages, read-only DB bytes
+and integrity, plus actual stats.js synthetic DOM (not browser proof).
+Native fixture hash guard now captures Python/JS readback inputs too.
+docs/BLOCK_RECORDS_V2.md and ANALYTICS_DASHBOARD/matrix/API docs updated.
+
+Final verification (synthetic/build evidence, NOT gameplay acceptance):
+
+- `./scripts/verify_travel_v2.ps1 -WorldTick -FishBucket -RaidEffect -Absorption -Rest -Resistance -ShieldEvidence -HealthLoss -TypeLabels -BlockRecords`:
+  **15 C++ binaries +10 native/SQLite/C API/private inspector/authenticated
+  HTTP/Japanese synthetic JS readbacks PASS**, at
+  `.build/travel-v2-tests/run-2e55825b16dc43e2a9473eb067d20df0/`.
+  v2 and legacy source fixture: mined total4, native Alice2/Bob1/Carol1,
+  explicit bad-only player null/rank omission; copiedXYZ12/64/-9 checked.
+  All232 captured source/test/readback inputs match before/after/current.
+- `./scripts/verify_native_stats_api.ps1`: four actual GetProcAddress C calls
+  into owned core-only test DLL, pages/JSON/escaping/DB bytes/integrity PASS at
+  `.build/c-api-tests/run-5dc22ce7577344fb8cd81f3e8842aa28/api-evidence.json`.
+  All72 inputs match before/after/current. No LL/BDS mod load or LRC registry.
+- `./scripts/verify_stats_library.ps1`: **179 Python PASS77.732s**, plus
+  optimized inventory2 PASS0.005s, at
+  `.build/stats-view-tests/run-0088bf1e08714516bb95317fd5ffe80c/regression.json`.
+  All87 inputs match before/after/current. Existing playtime/crash/JST/rank/
+  auth/no-sample telemetry and source semantics tests retained.
+- `./scripts/build_server_candidate.ps1`: **26 native units +prelink +DLL
+  link +strict PE/package PASS** at
+  `.build/server-candidate/run-99699d9d039a4071aca2ef4e72a7529a/candidate-evidence.json`.
+  DLL SHA256 `B3D3DEEEF8380061089CA3CB0DE9285940CE5EFFEC98263724C2A5CD727CDE80`;
+  ZIP SHA256 `CC6920EA932C7BBB7BD4825B3305F52BAA9519DA244C15B855D01157C22255F2`.
+  All124 source/script inputs match current; DLL/ZIP match receipt; archived
+  shared language asset matches source. No old-client import lib; matched
+  fullSDK/runtime deps/normal-release/launch-authorized/BDS-load flags remain
+  false. This candidate was NOT staged or loaded into BDS.
+- Category matrix now explicitly calls mined CODE_ONLY rather than the old
+  misleading COMPLETED_CAPTURE label. CUSTOM72/4/1 remains unchanged.
+  `python -O -m unittest discover -s tests -p test_parity_inventory.py -v`:
+ 2 PASS0.005s after matrix edit. `python scripts/audit_lk_parity.py`:
+  `.build/parity-audit/run-b158fa53bc034a968430118cf7f55020/inventory.json`,
+  96 mandatory rows / zero accepted. `git --no-optional-locks diff --check` PASS.
+
+Read-only final audit2026-11-07T22:00:41+09:00: bedrock_server_mod PID748
+start2026-11-05T01:38:04+09:00 and viewer python28268
+start2026-11-06T06:30:51+09:00 still present; listener127.0.0.1:18767.
+Protected run-2bbb... DLL SHA256 unchanged:
+`B286F054EF1CCF9D90CABBBF3943543FEA2B6FF78805D2EB7F044FF89D6D8A00`.
+No BDS stop/restart/commands/launch/stage/load, old SQLite modification,
+persistent viewer operation, security/auth/network change, GitHub push/release.
+MSPT was already accepted and NOT repeated. PROJECT_STATUS stays IN_PROGRESS.
+
+Host-route capability check: Praxis Sub PC ping returned
+"MCP tool call requires approval, but approval policy is never". No host
+command/BDS was started. This is this session's tool-approval boundary, NOT
+host connectivity failure, DLL failure or renewed MSPT blocker. No alternate
+identity/tool route, security change or offline-sandbox online-BDS retry.
+Coordinator normal-host fresh-world actual play / GUI / API acceptance remains
+required. Shield/LRC/full parity remain IN_PROGRESS, not a fixture-derived PASS.
+
+### 2026-11-07 — shared Japanese type labels / bounded local override (not gameplay acceptance)
+
+Implemented requirement6's language-file/configuration path independently,
+without copying upstream AGPL source/translations. Shared138 common Japanese
+block/item/entity labels in companion/lang/ja_JP.json, bounded C++/Python
+loaders, optional per-process override, raw-ID fallback. Native summary/rank
+GUI labels and the four C APIs use the same asset as Web /stats/search.
+CUSTOM77 truth/observation-stage labels take precedence over cosmetic overrides.
+No canonical ID/value/unit/rank, capture hook, schema or old history changed.
+
+| Area | Candidate implementation | Verification boundary |
+| --- | --- | --- |
+| Shared asset |138 independently authored common names; package carries lang/ja_JP.json with hash receipt | Not a complete game registry or proof that any type is captured |
+| Configuration | schema1/ja_JP;128KiB/4096 merged entries/256-byte labels; strict IDs/UTF-8/duplicate/control rejection | Native invalid file logs and preserves prior valid catalog; companion invalid override rejected before bind |
+| Isolation | Native load once; Python immutable per-server snapshot; no HTTP file parameter/hot reload/writes | Fresh processes only, existing BDS/viewer18767 not updated |
+| View/API | Cosmetic label + unchanged key; Japanese search; CUSTOM labels cannot be renamed by file | C API != LegacyRemoteCall; actual native GUI/other-Mod gameplay validation still pending |
+
+New core/type_labels.hpp/cpp, companion/type_labels.py and shared asset;
+runtime/stats_command/remote_api/stats_view wiring. Build recipes add the
+JSON loader and asset; PowerShell packaging rechecks inputs after archive
+creation. xmake local modpacker copy definition added but xmake route NOT run.
+docs/TYPE_LABELS.md gives setup, exact bounds, token/loopback safety and limits;
+ANALYTICS_DASHBOARD and per-key matrix updated without acceptance promotion.
+
+Initial targeted Python run caught a malformed synthetic block fixture
+(amount3 instead of three amount1 transitions), then an incorrect test unit
+expectation (existing mined unit is 回). Corrected fixtures/assertion, not
+production source validation. Final targeted4 Python tests PASS0.985s,
+including actual stats.js synthetic DOM, auth401/200, label search, HTML-like
+text escaping, server isolation, read-only DB bytes, schema/UTF-8/merge bounds.
+Earlier targeted5 C++ binaries +1 readback passed at
+.build/travel-v2-tests/run-85aeabc3231f4364b214e61485973f5c/;
+this precedes final extra loader-bound tests, not latest-tree final evidence.
+
+Initial full13 C++ binaries +9 readbacks PASS at
+.build/travel-v2-tests/run-1f8af47f1c9347698685a102ec87344f/.
+Initial candidate run-c26a17a79d8a4879ac5e90de851f2222 compiled26 native
+units but DLL link FAILED: newly formatted Logger::warn required an unlinked
+fmt::v11::vformat. Not a DLL/build/runtime PASS. Replaced ONLY these two new
+format warnings with existing fixed-message pattern; no new fmt dependency.
+One concurrent read-only shell creation was OS-denied5; no retry loop or
+security/identity change, waited for existing verification to finish.
+
+Found stale jump display after the coordinator's PlayerJumpEvent correction.
+Native/Web now say ジャンプ通知（旧加速観測を含む）. Analytics metadata identifies
+current event cause + explicit legacy_sources; definition distinguishes
+post_auth_input notification/cancellation from historical PosDelta observation.
+No producer/filter/quantity change or new jump runtime acceptance. Targeted
+jump6 tests PASS2.069s and labels4 PASS1.075s. Header/display updates mean
+the preceding fixture run is not final current-tree evidence.
+
+Final corrected verification (all synthetic/build scope, NOT actual-play):
+
+- `./scripts/verify_travel_v2.ps1 -WorldTick -FishBucket -RaidEffect -Absorption -Rest -Resistance -ShieldEvidence -HealthLoss -TypeLabels`:
+  **13 C++ binaries +9 native/SQLite/C API/private inspector/authenticated HTTP/
+  Japanese synthetic JS readbacks PASS** at
+  `.build/travel-v2-tests/run-98e3dc29964e4e158409c1d40ace5930/`.
+  Includes labels4096 boundary/merged overflow/invalid UTF-8/nesting/failed-load
+  rollback/CUSTOM priority and exact canonical IDs/values. All144 captured
+  inputs match before/after/current tree.
+- `./scripts/verify_native_stats_api.ps1`: separate C consumer resolves and
+  calls all4 exports from owned core-only fixture DLL; JSON/pages/escaping/
+  absence/read-only DB/integrity PASS, at
+  `.build/c-api-tests/run-4ad7de327a9b460a9a70fa9ad96ef616/api-evidence.json`.
+  All70 inputs match before/after/current. NOT a BDS mod load or LRC proof.
+- `./scripts/verify_stats_library.ps1`: **175 Python PASS75.627s**, optimized
+  inventory2 PASS0.005s, at
+  `.build/stats-view-tests/run-c4a249393d9d41c1aa7813c883e62d3e/regression.json`.
+  All85 inputs match before/after/current, including shared JSON asset.
+  Existing playtime/JST/crash/open-session/rank/auth/escaping/no-sample telemetry
+  tests retained, plus label config/HTTP/JS and corrected jump display checks.
+- `./scripts/build_server_candidate.ps1`: **26 native units +prelink +DLL
+  link +strict PE/package PASS**, at
+  `.build/server-candidate/run-d53ad537377a46f0b354ac50fef389f4/candidate-evidence.json`.
+  DLL SHA256 `643DF2FDCF132CAEFE539F6B1BD52A32C071A6C07376C17E6D000F6030A84123`;
+  ZIP SHA256 `1927A7B3C1CC08E20879ADF081743BAFCD25D4D605EB8C3BD36C05EF2A0D64B9`.
+  All123 source/script inputs match current tree; DLL/ZIP match receipt.
+  Shared source, packaged file, ZIP entry and receipt label SHA256 all match
+  `50BCF69462A65FF99C0C898AE97C20311BF074C191A30491A3CF8F9B419B656C`.
+  No old-client import lib; matched fullSDK/runtime deps/normal-release/
+  launch-authorized/BDS-load flags remain false. NOT staged/loaded into BDS.
+- `python scripts/audit_lk_parity.py`:
+  `.build/parity-audit/run-b3d4de1186ee4b08af9a9964ab12ca7a/inventory.json`,
+  96 mandatory rows / zero accepted. CODE_ONLY72/UNIT_ONLY4/MISSING1 unchanged.
+  `git --no-optional-locks diff --check` PASS.
+
+Read-only final audit at2026-11-07T21:31:59+09:00: BDS **bedrock_server_mod**
+PID748 still start2026-11-05T01:38:04+09:00; viewer python28268 still
+start2026-11-06T06:30:51+09:00, listener127.0.0.1:18767. An exact-name
+bedrock_server query initially omitted the _mod process; PID/wildcard audit
+confirmed it, not a server exit. Protected run-2bbb... DLL SHA256 remains
+`B286F054EF1CCF9D90CABBBF3943543FEA2B6FF78805D2EB7F044FF89D6D8A00`.
+No BDS stop/restart/commands/launch/stage/load or persistent companion
+operation, no security/auth/network change, no GitHub push/release.
+MSPT already accepted, not repeated. PROJECT_STATUS remains IN_PROGRESS:
+shield statistics, compatible RemoteCall and full actual-player/SQLite/GUI/API
+acceptance remain unfinished; language fixtures do not promote those gates.
+
+### 2026-11-07 — same-hurt HEALTH delta source, not notification damage or final-world proof
+
+Implemented independent `ll26.60.hurt_health_delta.v1` for CUSTOM damage_taken/
+damage_dealt. Reuses existing Player/Mob hurt hooks and bounded writer path in
+player_absorption.cpp, with separately copied HEALTH and ABSORPTION attributes.
+No extra hurt hook, per-tick DB write, schema migration or protected deployment.
+Native StatsReader personal/rank/C API and companion/real stats.js now use the
+strict HEALTH source only. Old notification rows stay in SQLite and old action
+history, but do NOT contribute to these CUSTOM keys. Legacy-only DB => null.
+76 limited projections remain; this is not a full77/9 or actual-play acceptance.
+
+| Area | Candidate implementation | Limits / pending |
+| --- | --- | --- |
+| Capture | Public SharedAttributes::HEALTH/getAttribute typed float before/after, same weak Actor/Level/dimension/attribute; result DamageProcessed2 + sane optional returned amount | Returned/input amounts are NOT HP loss; only actual positive attribute delta is used |
+| Reentrancy | Existing one Player->sameMob parent allowed; recursive/foreign/repeated parent poisons outer observation; origin result/exception preserved | Hook execution and lifetime need real engine controls |
+| Quantity | Nearest milli then nearest0.1HP; nonfinite/negative/gain/unchanged/oversized delta rejected; delta<=input+1milli | Net HEALTH change within call, not all applied damage; healing/totem/otherMod can reduce/hide loss; no exclusive causation/world commit |
+| Attribution | Victim Player and independently re-resolved direct/child-projectile source Player; unknown/self/environment/thorns/explosion not guessed | Partial attribution/coverage; separate queue rows may be lost/non-atomic |
+| View | Distinct cause/attribute/typed details; HP属性減少観測 label and explicit not-final/not-gameplay status; old notifications not summed | New source actual BDS/player/SQLite/in-game GUI/API still unaccepted |
+
+Added core/health_loss_observation.hpp, health_loss_sql.hpp,
+companion/health_loss_source.py and native/reader/catalog/JS wiring.
+Shared validation/fixed-point helpers are existing independent BedrockInsight
+code, not AGPL reference code. docs/HEALTH_LOSS_CAPTURE.md covers controls,
+data definitions, old history, trust/rounding and normal-host validation.
+Sites skill used LOCAL-ONLY for existing UI/JS checks; no registration/source
+sync/hosting/publication, no change to the persistent viewer process.
+
+Pinned-header adapter compile PASS:
+`.build/health-probe/run-945be9b2eb0c42549a6127683ef5ceb2/`.
+One new compiler-emitted MCAPI name, `?HEALTH@SharedAttributes@@SAAEBVAttribute@@XZ`,
+was reviewed against public SharedAttributes.h (HEALTH MCAPI). Exact PE
+allow-list adds only this name; ceiling52->53. Parser tests13 valid/41 rejected
+PASS, including incorrect HEALTH return signature rejection. No guessed offset.
+Target Python4 tests PASS2.523s; actual JS syntax check PASS.
+
+Initial full171-Python run failed1 obsolete test expecting pre-notification
+values in CUSTOM, `.build/stats-view-tests/run-390ed05447c1417d883d36b12c86fc8d/`.
+Not counted as PASS. Updated that assertion to require null and HEALTH-stage
+metadata while retaining the old action-history pre-notification checks.
+Changed-contract3 tests then PASS0.665s.
+
+Final native fixture command:
+`./scripts/verify_travel_v2.ps1 -WorldTick -FishBucket -RaidEffect -Absorption -Rest -Resistance -ShieldEvidence -HealthLoss`
+**12 C++ binaries +9 SQLite/native C API/private inspector/authenticated HTTP/
+Japanese synthetic JS readbacks PASS** at
+`.build/travel-v2-tests/run-58513a9f8a73425893afa41b60a81ed6/`.
+HEALTH fixture gives Alice50/Bob30/total80 independently for taken/dealt,
+checks page metadata and rejects old999 notification amounts, absorption
+rows, malformed/duplicate JSON, wrong amounts/types. New source stays distinct.
+This is NOT actual engine/player/browser/GUI proof. All140 captured native
+source/test/script hashes match before/after/current.
+
+Final build/regression evidence:
+
+- `./scripts/build_server_candidate.ps1`: **26 native units +prelink +DLL
+  link +strict PE/package PASS**, at
+  `.build/server-candidate/run-1d2ccb568b044a5dbd922d27b4d3e9c7/`.
+  DLL SHA256 `FF21329CA540F83914323C0A412A3E58E1F6996AE6067CE29126F58440B80152`;
+  ZIP SHA256 `281655D3D5A336A99523AF4D69DA1D08D05D999FFD6CB091710F55FE23022ADA`.
+  All119 source/script inputs match current tree; DLL and ZIP match receipts.
+  old_client_import_library_used=false. Matched full SDK/runtime deps/normal
+  release/launch authorized/BDS load remain false. NOT staged into a BDS or loaded.
+- `./scripts/verify_stats_library.ps1`: **171 Python PASS74.978s**, plus
+  optimized inventory2 PASS0.004s at
+  `.build/stats-view-tests/run-11ecb73a03b546fa94a3fe6adde3fd00/`.
+  All81 source/test/script inputs match before/after/current. Includes prior
+  playtime/crash/JST/rank/auth/escaping/telemetry coverage and new HP cases.
+- Final `python scripts/audit_lk_parity.py`:
+  `.build/parity-audit/run-214ee3fdf3894eb1a7f6839cc8dccdd7/inventory.json`.
+  96 rows zero accepted; declarations remain CODE_ONLY72/UNIT_ONLY4/MISSING1.
+  No compile/fixture evidence promoted actual-player/GUI/API acceptance.
+
+Read-only end audit: PID748 still has start2026-11-05T01:38:04+09:00;
+viewer28268 still start2026-11-06T06:30:51+09:00, .NET TCP listener127.0.0.1:18767.
+Protected run-2bbb... DLL SHA256 remains
+`B286F054EF1CCF9D90CABBBF3943543FEA2B6FF78805D2EB7F044FF89D6D8A00`.
+Previously observed externally started PID34584 is no longer present; a name
+audit currently finds only BDS748. This turn sent NO stop/terminate/restart or
+server command and did not stage/load a BDS. Its exit time/cause is unknown;
+do not infer candidate runtime failure or silently restart it.
+
+This turn did not stop/restart/stage/load/patch any existing BDS/18767, no security/auth/network change,
+no GitHub push/release. MSPT is already accepted and was not repeated.
+PROJECT_STATUS remains IN_PROGRESS; all96 actual-play acceptance rows remain
+unaccepted, including damage keys. Shield/RemoteCall/full gameplay gaps remain.
+
+### 2026-11-07 — native C API consumer / coherent ranking pages (NOT RemoteCall compatibility)
+
+Implemented a C11/C++20 public header, `core/stats_api.h`, with explicit calling
+convention and function-pointer types for the existing four independent APIs.
+The old C++ `remote_api.hpp` now reuses those declarations. No allocation,
+C++ object, SQLite handle, HTTP authentication token or writer crosses the ABI.
+Added `StatsReader::ranking_page`: positive ranking rows, total_entries and
+has_more come from ONE SQLite statement/read snapshot, including empty and
+beyond-last pages. Existing ranking callers delegate to this read-only path.
+Both rank APIs now include total_entries/has_more/collection_complete:false.
+No source event semantics, migrations or existing databases were changed.
+
+| Area | Enabled in candidate source / test result | Pending |
+| --- | --- | --- |
+| Public ABI | C-compatible declarations; same4 names/signatures/negative returns; explicit __cdecl | Provider lifetime and real other-Mod integration on normal-host isolated BDS |
+| Pagination | Deterministic positive-only rows, coherent count, empty/out-of-range pages | Requests are not a pinned cross-request snapshot; writer may update between pages |
+| Actual dynamic boundary | Separate C EXE -> GetProcAddress -> core-only test DLL -> read-only SQLite;4 functions called | NOT an LL/BDS mod load or LegacyRemoteCall registry/export |
+| Honesty | NoData totalnull, shield unsupported/error, collection_completefalse, raw IDs absent | Full9/77/GUI/API gameplay acceptance remains incomplete |
+| Compatibility audit | Pinned local upstream contract inspected factually; namespace/UUID/enum/map/1-based pages differ | Official LegacyRemoteCall0.23 SDK absent in checked caches; pinned Web inputs cache-miss, license/ABI still unverified |
+
+New test-only fixture DLL setup and C consumer are excluded from the actual
+BDS mod source list. The test creates only an unused project-local DB and
+refuses an existing file. C verifies every DB byte unchanged after API reads;
+independent Python parses the actual emitted JSON and checks closed DB
+integrityok. No upstream AGPL implementation/comments/translations copied.
+`docs/NATIVE_STATS_API.md` documents usage, bounds, units/nulls, trust/lifecycle,
+native vs HTTP auth, current incompatibilities and remaining real-player gate.
+
+Final verification (synthetic/API-boundary/build evidence, NOT gameplay):
+
+- `./scripts/verify_native_stats_api.ps1` PASS:
+  `.build/c-api-tests/run-65ca73b9bcd0456ba28b0994ae0f0a7b/`.
+  Actual C11 dynamic4 calls, buffer/error bounds, valid escaped JSON, page
+  totals/last/out-of-range, absence of fabricated zeros, full-file read-only
+  check and independent integrityok. All64 captured input hashes match
+  before/after/current. Core fixture only; C caller does not statically link
+  the provider, C++ or SQLite. Test DLL SHA256
+  `EAB90F87F377B40309E7053A3239DE6157115706017783E17EB67274B31928D3`.
+- `./scripts/verify_travel_v2.ps1 -WorldTick -FishBucket -RaidEffect -Absorption -Rest -Resistance -ShieldEvidence`
+  **11 C++ binaries +8 DB/HTTP/private-inspection/Japanese synthetic JS
+  readbacks PASS**, `.build/travel-v2-tests/run-985fef718e704397a78210ab18436fc5/`.
+  Includes new native reader and four-API pagination assertions. No gameplay,
+  browser or BDS acceptance inferred. All137 captured input hashes match
+  before/after/current.
+- `./scripts/build_server_candidate.ps1`: **26 native units +prelink +DLL
+  link +strict PE/package PASS** at
+  `.build/server-candidate/run-a92aea3c79f5407eb1fe8fcdb14fc296/`.
+  DLL SHA256 `B0DA643AC10AD54A15241C813992911392EBFD5EDF2794015BA7F19FD4416E89`;
+  ZIP SHA256 `9E99DBDD2E26A0ED2998254B68B7D9287E1BBC6E158C36E7ECAACC49881356E7`.
+  All117 source/script hashes match current tree. Static PE export inspection
+  confirms all4 public names in the actual candidate. Old client import=false;
+  matched full SDK/runtime deps/normal release/launch authorized/BDS load=false.
+  Candidate NOT staged/loaded. Cached clang/SQLite/package env as documented
+  in preceding build entries; no network SDK installation.
+- Optimized `python -O -m unittest discover -s tests -p test_parity_inventory.py -v`:
+  2 PASS; `python scripts/audit_lk_parity.py` keeps96 rows unaccepted and the
+  same CODE_ONLY72/UNIT_ONLY4/MISSING1 declarations. Inventory is not an
+  implementation audit or runtime acceptance. No repeat of the unchanged
+  prior167-Python baseline was needed; this turn ran8 readbacks plus2 inventory
+  tests, native11 and the new C dynamic boundary.
+  Final inventory after matrix corrections:
+  `.build/parity-audit/run-8920661604b141f1a40c363fd52197a3/inventory.json`.
+  Final optimized2 tests PASS0.006s; final candidate117 inputs, DLL and ZIP
+  still match their receipt. No metric/API/GUI acceptance was promoted.
+
+During the candidate build, an extra read-only shell spawn was denied with
+known CreateProcessAsUserW5. No alternate shell/identity/security bypass or
+fast retry; the original build session completed normally. Post-build
+read-only audit found BDS748 (same11-05 start), BDS34584 (same11-07 16:55:05
+start) and viewer28268 (same11-06 06:30:51 start), and .NET TCP listener
+127.0.0.1:18767. The externally started34584 is protected, NOT proof of this
+candidate. Protected run-2bbb... DLL remains SHA256
+`B286F054EF1CCF9D90CABBBF3943543FEA2B6FF78805D2EB7F044FF89D6D8A00`.
+
+No existing BDS/viewer18767 was stopped, restarted, staged, loaded or patched.
+MSPT acceptance remains done; no MSPT/offline-BDS retry. PROJECT_STATUS remains
+IN_PROGRESS; four C exports do NOT satisfy LegacyRemoteCall compatibility or
+actual other-Mod acceptance merely because the dynamic core fixture passed.
+
+### 2026-11-07 — opt-in raw shield evidence, NEVER a successful shield statistic
+
+Shield mitigation remains MISSING/unmeasured; no prediction/no-hurt shortcut.
+Implemented a narrow prerequisite to genuine acceptance: typed Player::$_hurt
+before/after evidence, disabled by default. Only exact process-local
+BEDROCKINSIGHT_SHIELD_EVIDENCE=1 registers the evidence hook; unset/0/true/01/
+trailing-space do not. Normal startup gets a dormant token with no new hook.
+No BDS or persistent viewer was started; no process environment/security or
+protected world/DB/DLL was changed here.
+
+| Area | Candidate implementation | Still pending / limits |
+| --- | --- | --- |
+| Raw observations | Entry public isDamageBlocked/isInvulnerableTo; before/after public blocking/statusflag74, typed shield timestamps/previous flags, invulnerable/dead state; copied input/result type/optional amount | Names and raw changes are NOT validated shield-success semantics or measured blocked quantity |
+| Safety | Origin exactly once/result/exception preserved, weak re-resolution after origin, same Player/Level/dimension; no old this/source dereference after origin | Real engine dispatch, lifetime and all control cases require normal-host tests |
+| Bound | Max256 identities and>=5s between samples/player (except initial/clock regression), old admission slots pruned only when full; admission reserves before origin | Samples can miss cases; queue/telemetry failures lose rows; not a complete damage log |
+| Persistence | Append-only EventKind::PlayerShieldEvidence text player_shield_evidence, cause ll26.60.player_hurt_shield_evidence.v1, amount0, existing schema4/bounded writer | NOT in daily type/CUSTOM/ranking projections; no migration or old-data rewrite |
+| Private inspection | companion.shield_evidence CLI, read-only bounded subset, duplicate/type/shape/false-success checks, opaque identity, no HTTP evidence endpoint | CLI exit0/schema-valid/sample-present are NOT actual-play/engine/metric acceptance |
+| Web / API | Existing Japanese shield stats must remain unsupported/null even with raw evidence; other76 limited projections preserved | Shield metric and all96 full-parity actual player/SQLite/GUI/API gates remain unaccepted |
+
+New core/shield_evidence.hpp, native player_shield_evidence.cpp/.hpp, lifecycle/
+build registration, read-only companion/shield_evidence.py, native and Python/
+actual stats.js synthetic tests. No AGPL source/comments/translations copied.
+Docs/SHIELD_CAPTURE_FINDINGS.md contains opt-in, raw field definitions and
+normal-host cases separated by>=6s; docs/ANALYTICS_DASHBOARD.md links it.
+
+Single-adapter pinned-header compile PASS at
+`.build/shield-probe/run-f486c77dcf644f32b1f8b0814c594b83/` (before the final
+opt-in helper refactor; final full candidate below is authoritative).
+No new BDS MCAPI allow-list entry is needed: Player::$_hurt already reviewed,
+getStatusFlag is a public LLNDAPI. No guessed offset/address or private thunk.
+Targeted Python5 PASS1.243s: raw rows cannot become shield stats/zero/rank,
+strict JSON/types/duplicates, future/foreign exclusion, bounded subset,
+private CLI/read-only/empty is not PASS, authenticated HTTP/actual stats.js
+stays unavailable. Initial DOM fixture incorrectly expected zero children
+instead of the existing unavailable-placeholder row; test expectation fixed,
+production UI unchanged. No failed run was counted as acceptance.
+
+Final verification:
+
+- **11 native C++ binaries +8 SQLite/private-inspection/authenticated HTTP/
+  Japanese JS readbacks PASS**:
+  `.build/travel-v2-tests/run-0cc6c961b94d4b12bdeea082d42f3b7f/`.
+  New4-row production builder→StorageWriter→closed SQLite fixture preserves
+  hypothetical raw states, amounts0, integrityok. No daily-type aggregate rows,
+  native CUSTOM empty, native shield ranking unsupported; private CLI sees4
+  raw rows while anon401/auth200 Japanese stats.js keeps shield unsupported/
+  null. Synthetic data, NOT actual shield/engine/player/browser proof.
+ 136 source/test/script hashes match before/after/current.
+- **26 native units +prelink +DLL link +strict PE/package PASS**:
+  `.build/server-candidate/run-e3d0fa4739134cf9b65917d34b290ce8/`.
+  DLL SHA256 `50D4E4EDD57095DCFF40EE1767DD9B66D7404DAD988338734668BBA08F3F1105`;
+  ZIP SHA256 `4424A8C4EAC8E8E2470137ADC8AC447B9F8618DD029ABEC06EDFB064C1071CA0`.
+ 116 source/script hashes match current tree; DLL/ZIP match receipt. No old
+  client import library used. Matched full SDK/runtime dependencies/normal
+  release/BDS load/launch authorization remain FALSE. Not staged/loaded.
+- **167 Python PASS77.455s +optimized inventory2 PASS0.004s**:
+  `.build/stats-view-tests/run-c9a2fcc279cb44bfb2296e2833cc06b8/`.
+ 78 inputs match before/after/current. Real stats.js ran in a synthetic DOM
+  on authenticated HTTP JSON; no actual browser/gameplay acceptance.
+- Strict import parser regression **12 valid /40 rejected PASS**, and current
+  matrix optimized2 PASS0.005s. Per-key classifications stay72 CODE_ONLY,
+ 4 UNIT_ONLY,1 MISSING (77); all96 actual-play/SQLite/GUI/API gates unaccepted.
+  Final post-document inventory:
+  `.build/parity-audit/run-85cdecc47bce429ab75be5cb1af63c73/inventory.json`,
+  current matrix optimized2 PASS0.004s.76 limited read projections unchanged;
+  no shield metric projection. Raw diagnostic code is not a completed metric.
+
+Exact commands (same cached clang-cl/SQLite/package env variables as the
+preceding verified entries, no downloads or BDS start):
+
+```powershell
+$env:PYTHONPATH='tests;.'
+$env:PYTHONUTF8='1'
+python -W error::ResourceWarning -m unittest discover -s tests -p test_shield_evidence.py -v
+./scripts/verify_travel_v2.ps1 -WorldTick -FishBucket -RaidEffect -Absorption -Rest -Resistance -ShieldEvidence
+./scripts/build_server_candidate.ps1
+./scripts/verify_stats_library.ps1
+./scripts/verify_interval_runtime_import.ps1
+python -O -m unittest discover -s tests -p test_parity_inventory.py -v
+python scripts/audit_lk_parity.py
+```
+
+Final read-only protection audit: PID748 bedrock_server_mod still started
+2026-11-05T01:38:04.0009206+09:00; viewer PID28268 python still started
+2026-11-06T06:30:51.2176499+09:00.127.0.0.1:18767 remains listening;
+owner PID not newly CIM-attested. Protected run-2bbb... DLL SHA256 stays
+`B286F054EF1CCF9D90CABBBF3943543FEA2B6FF78805D2EB7F044FF89D6D8A00`.
+An additional BDS PID34584 started2026-11-07T16:55:05.6596720+09:00 was
+observed. We did not launch/stop/restart/modify it or inspect its world/DB;
+it is also protected. Its existence is NOT candidate load/runtime evidence.
+
+PROJECT_STATUS remains IN_PROGRESS. Normal-host actual-play collaboration was
+requested without blocking local implementation. No MSPT rerun, no online BDS
+retry in the offline sandbox, no GitHub push/release or unrelated project work.
+
+### 2026-11-07 — correlated resistance-stage formulas, NOT measured applied mitigation
+
+Implemented damage_resisted and damage_dealt_resisted as independently derived
+quantities on an observed/correlated public26.60 post-enchantment stage. Cause
+ll26.60.processed_hurt_resistance_formula.v1. No AGPL code/comments/translations
+copied; referenced pinned upstream behavior factually, not as local proof.
+
+| Area | Implemented / verified so far | Pending / limits |
+| --- | --- | --- |
+| Native hooks | Public Player/Mob::$_hurt + const Mob::$getDamageAfterEnchantReduction, WeakEntityRef, getEffect and source virtual API;25-unit candidate DLL/link/strictPE PASS below | No real BDS execution |
+| Correlation | One stage inside same victim/source hurt; one Player→Mob parent, no duplicate event; repeated/foreign/recursive stage or hurt-in-stage poisons frame | Actual26.60 dispatch/call hierarchy, compatibility with other Mods |
+| Admission | Positive finite/bounded inputs and basis, resistance-eligible source, effectID11, stable amplifier/duration and Player/Level/dimension; outer DamageProcessed + finite optional return | NotHurt/EffectsOnly, duration<=0/unbounded effect and changing effect omitted; full-resistance returns may be missing |
+| Quantity | Nearestmilli basis × capped level/5, then nearest0.1HP; no HP/absorption/returned-value substitution | A reference FORMULA, NOT engine-applied resistance or final HP loss; flags explicitly false |
+| Attribution | Player victim; separately resolved same-Level direct/child-projectile owner Player, re-resolved after origin | Self/environment/thorns/explosion/unknown excluded from dealt; pair of writer submissions not atomic |
+| View / read | Strict native SQL + Python quantity/source/type/JSON validation, per-player/period/rank and Japanese computed-value status, 1/10HP, null if absent | Common GUI/API reader is wired, but actual in-game GUI/compatAPI/browser proof still missing |
+| Safety | Origin once/result/exception preserved, copied primitives to bounded writer, no game-thread DB I/O or protected deployment | Preserve accepted MSPT, travel/rest/absorption/jump/history and live18767 |
+
+New core/resistance_observation.hpp, resistance_sql.hpp, native
+player_resistance.cpp/.hpp, companion/resistance_source.py, lifecycle/build
+registration and dedicated synthetic native/Python/HTTP/JS tests.
+Docs: RESISTANCE_CAPTURE.md and SHIELD_CAPTURE_FINDINGS.md. Sites skill was used
+in LOCAL-ONLY existing-checkout mode; no Site registration/source sync/hosting/
+publication or extra persistent viewer. Root dashboard and authentication stay.
+
+Single-adapter pinned-header probe PASS at
+`.build/resistance-probe/run-04925ee8ab494665a51f841e93fee1bc/` (before the final
+hurt-in-stage reentry guard; final complete candidate below is authoritative).
+Exact const compiler import ?$getDamageAfterEnchantReduction@Mob@@QEBAMAEBVActorDamageSource@@M@Z
+is individually allow-listed. Runtime delay shape ceiling51→52; exact
+module/name/ordinal checks retained. No guessed offsets/private thunk calls.
+Targeted Python5 PASS3.107s: roles, stages, levelsI..V/255 cap, rounding/bounds,
+malformed/duplicate/typed/tampered rows, nativeSQL/Python equivalence,
+JST/player/rank/pages/read-only401/200 and actual stats.js in synthetic DOM.
+10 native C++ fixtures +7 native writer→SQLite→HTTP/JS paths PASS so far in
+`.build/travel-v2-tests/run-1fdd9a6d7599411e8e3b436201940ca5/`.
+Synthetic resistance total50 per key, Alice30/Bob20, invalid rows excluded,
+closed DB integrityok. None of these is player/engine/browser acceptance.
+
+Shield remains mandatory MISSING/unmeasured. Header inventory found public
+predictive virtual isDamageBlocked, typed shield timestamps/previous flags,
+ActorFlags::BlockedUsingShield74 and LevelSoundEvent::ShieldBlock255, but no
+public _blockUsingShield declaration or independently verified successful
+blocked-amount publisher. Names/flags/sounds and upstream prediction+no-hurt
+heuristic are not silently promoted to actual shield mitigation.
+Current76 limited read projections do NOT mean76 fully captured/accepted
+metrics or all-feature parity.
+All96 actual-play/SQLite/GUI/API acceptance entries remain unaccepted;
+PROJECT_STATUS=IN_PROGRESS. Existing BDS/oldDB/18767/security/auth/network,
+other projects and GitHub are untouched. No MSPT rerun or sandbox online BDS.
+
+Final verification:
+
+- **10 native C++ binaries +7 native DB→authenticated HTTP→Japanese JS DOM
+  readbacks PASS**, root run-1fdd9a6d7599411e8e3b436201940ca5 above.132
+  source/test/script hashes match before/after/current. New14-row resistance
+  DB contains6 valid and8 excluded records; personal30, ranks30/20, total50
+  per key, integrityok. Stage-gate duplicate/foreign/nested exclusion and
+  origin/exception preservation are SYNTHETIC models, not engine proof.
+- **25 native units +prelink +DLL link +strict PE/package PASS**:
+  `.build/server-candidate/run-9bb957e117ed4ae9941f9a4f98cf9eb7/`.
+  DLL SHA256 `669B49A4A17D7211800955CF2581C0531BC0957DCADD522036D1756714102730`;
+  ZIP SHA256 `D3BBDB5D95F1EF1E89715D7A8574898B299DEF165290627ADD5466E98C594355`.
+ 113 source/script hashes match current tree; DLL/ZIP match receipt. Old
+  client import library used=false. Matched full SDK/runtime dependencies/
+  normal release/BDS load/launch authorization remain FALSE; NOT staged/loaded.
+- **162 Python PASS76.292s +optimized inventory2 PASS0.006s**:
+  `.build/stats-view-tests/run-fdb06598af07424ba317b9f3e4a8bef3/`.
+ 75 before/after/current source hashes match. Includes real stats.js executing
+  on authenticated HTTP JSON in a synthetic DOM; not an actual browser.
+- Strict runtime import parser regression **12 valid /40 rejected PASS**,
+  `./scripts/verify_interval_runtime_import.ps1`; no load/runtime proof.
+- Final matrix inventory
+  `.build/parity-audit/run-6f0cf729b93b4e4980257d2f2d1adff4/inventory.json`:
+ 96 entries, zero accepted; CUSTOM77 declarations CODE_ONLY72/UNIT_ONLY4/
+  MISSING1. Matrix input hashes match;76 limited Python read projections and
+  no shield projection. Post-document optimized inventory2 PASS0.005s.
+  UNIT_ONLY/limited definitions and every actual-play gate still require work;
+  these counts do not assert76 complete native metrics.
+
+Exact commands used, with the same three cached toolchain/SQLite/package env
+variables documented in the preceding rest entry:
+
+```powershell
+$env:PYTHONPATH='tests;.'
+python -W error::ResourceWarning -m unittest discover -s tests -p test_resistance.py -v
+./scripts/verify_travel_v2.ps1 -WorldTick -FishBucket -RaidEffect -Absorption -Rest -Resistance
+./scripts/build_server_candidate.ps1
+./scripts/verify_stats_library.ps1
+./scripts/verify_interval_runtime_import.ps1
+python -O -m unittest discover -s tests -p test_parity_inventory.py -v
+python scripts/audit_lk_parity.py
+```
+
+Protection recheck: visible BDS PID748 bedrock_server_mod started
+2026-11-05T01:38:04.0009206+09:00 and viewer PID28268 python started
+2026-11-06T06:30:51.2176499+09:00, unchanged from the preceding checkpoint.
+Same-token .NET enumeration confirms127.0.0.1:18767 is listening (owner PID
+not newly CIM-attested). Protected run-2bbb... DLL SHA256 still
+`B286F054EF1CCF9D90CABBBF3943543FEA2B6FF78805D2EB7F044FF89D6D8A00`.
+No process restart, protected file write, permanent preview, security change,
+remote push or release. Future online player tests require the authorized
+normal-host coordinator, not the offline execution sandbox; no such test was
+attempted here. All96 mandatory actual-player/SQLite/GUI/API gates remain open.
+
+### 2026-11-07 — time_since_rest: completed Player tick snapshots after observed sleep
+
+Implemented an independent public26.60 ServerPlayer::$normalTick producer,
+core/rest_counter.hpp and strict rest_sql.hpp / companion/rest_source.py.
+Cause ll26.60.player_rest_ticks.v1. It counts completed PLAYER tick calls
+after actual post-origin isSleeping=true, never Level callbacks, elapsed
+wall time or a presumed50ms/tick. No upstream AGPL code/comments/translations.
+
+| Area | Enabled in candidate source | Pending / limits |
+| --- | --- | --- |
+| Baseline / reset | Unknown until sleep observed; sleeping resets to known0; awake completed calls increment | Not full-night/phantom-reset proof or actual engine dispatch-frequency validation |
+| Continuity | Same weak Player/Level, join/disconnect memory reset, >30s gap/clock regression/nesting reset, overflow invalidation | Past saved rows are history, not a current/online value; no restart/offline extrapolation |
+| Safety | Origin once/exception preserved, post-origin weak re-resolution, bounded256 records, cross-thread fail-closed, >=5s queue snapshots | No per-tick DB I/O; queue drops/final <5s tail not filled; all actual gameplay pending |
+| Readers | Native StatsReader personal/rank (shared GUI/API path), strict JSON/types/duplicates/time; Japanese Web selected-player/JST period/paging/rank | Latest per player, NOT SUM/MAX history. Latest unknown suppresses older known. Known0 displayed, zero/unknown not ranked |
+| Existing four categories | Playtime, activity/ranking and genuinely accepted TPS/MSPT retained | Current source is not deployed into18767 or protected BDS |
+
+Period filters select snapshot timestamps, not a clipped duration since the
+period boundary. All-player total sums latest known per-player values only.
+Unknown marker amount0 is never a measured zero; no record/unknown returns null.
+Web explicitly says last SAVED observation, not current value. Exact definition,
+exclusions and normal-host player acceptance checklist: docs/REST_CAPTURE.md.
+
+Verification below is NOT real BDS/player acceptance. Do not infer that from
+compile, synthetic DB/HTTP/DOM, or enum registration. Single-adapter
+probe compiled successfully against pinned headers at
+`.build/rest-probe/run-f39f20b046df48388e93193072bfb899/`.
+Its exact compiler import ?$normalTick@ServerPlayer@@QEAAXXZ is individually
+allow-listed; bounded runtime PE shape50→51, module/ordinal checks retained.
+Targeted Python5 PASS1.690s. Initial tests had two incorrect expectations
+(lexicographic tied player IDs; snapshot cadence at exactly5s); corrected
+test expectations without changing counter/reader behavior. Initial fixture
+run6035516cc5a0425fbc1db0badc852aca FAILED and is not acceptance evidence.
+
+Final verification:
+
+- **9 native C++ binaries +6 native DB→authenticated HTTP→Japanese JS DOM paths
+  PASS**: `.build/travel-v2-tests/run-3850f5b182cd46399ac2aea5e73569ce/`.
+  Rest production builder→StorageWriter→closed10-row SQLite→native personal/
+  ranking→integrity=ok: Alice latest known0, Bob200, Charlie latest unknown
+  (not his older300); malformed/mismatched/duplicate rows excluded. API401/200,
+  Web total200, rankingBob200 only, known0 and null shown separately. Synthetic
+  only, NOT player/engine/browser evidence.127 source/test/script hashes match
+  before/after/current tree.
+- **24 native units +prelink +DLL link +strict PE/package PASS**:
+  `.build/server-candidate/run-a280aac3d1a74788b70d09f18fb7938d/`.
+  DLL SHA256 `EFF10803D8171B7477506690080DFCCD86030E7B1C0447C1F82D53323000DF75`;
+  ZIP SHA256 `F5C5F24A4E7BF08F115AD6D175503D82EC61F5A9EA2BCE35F7F0E38AE2245A5A`.
+ 109 source/script hashes match current tree; DLL/ZIP match receipt. Matched
+  full SDK/runtime dependencies/normal release/BDS load/launch authorization
+  remain FALSE. Candidate was NOT staged/loaded. No old-client library used.
+- **157 Python PASS71.315s +optimized inventory2 PASS**:
+  `.build/stats-view-tests/run-96be8f2275b64602be016c8a93a6ac98/`.
+ 72 inputs before/after/current all match. This includes the actual stats.js
+  executing on authenticated HTTP JSON in a synthetic DOM, not a browser.
+- Strict runtime import parser regression **12 valid /40 rejected PASS**:
+  `./scripts/verify_interval_runtime_import.ps1`. Exact names/module/ordinal
+  remain enforced; no blanket API allow or load proof.
+- Final inventory `.build/parity-audit/run-0cb02e5c7ad1419bbc34956965ab11af/inventory.json`:
+ 96 mandatory rows, zero accepted.77 CUSTOM declarations: CODE_ONLY70,
+  UNIT_ONLY4, MISSING3, BLOCKED0. Declarations are not independently attested
+  native/gameplay/SQLite/GUI/API acceptance.
+  Matrix evidence-table follow-up also passed optimized inventory2 tests0.005s.
+
+Exact commands (same cached environment as the preceding verified increments):
+
+```powershell
+$env:BEDROCKINSIGHT_CLANGCL_ROOT='C:/Dev/LL2660Toolchain-20261029/clang+llvm-23.1.4-x86_64-pc-windows-msvc/bin'
+$env:BEDROCKINSIGHT_SQLITE_ROOT='C:/Users/chihirosub/AppData/Local/.xmake/packages/s/sqlite3/3.54.0+100/b897e7007f3d49769c227e337e14fdef'
+$env:BEDROCKINSIGHT_XMAKE_PACKAGES='C:/Dev/LL2660BuildCache/.xmake/packages'
+$env:PYTHONPATH='tests;.'
+python -W error::ResourceWarning -m unittest discover -s tests -p test_rest.py -v
+./scripts/verify_travel_v2.ps1 -WorldTick -FishBucket -RaidEffect -Absorption -Rest
+./scripts/build_server_candidate.ps1
+./scripts/verify_stats_library.ps1
+python scripts/audit_lk_parity.py
+./scripts/verify_interval_runtime_import.ps1
+```
+
+Final read-only protection audit: PID748 bedrock_server_mod still started
+2026-11-05T01:38:04.0009206+09:00; PID28268 python still started
+2026-11-06T06:30:51.2176499+09:00.127.0.0.1:18767 is listening. Protected
+run-2bbb... DLL SHA256 remains
+`B286F054EF1CCF9D90CABBBF3943543FEA2B6FF78805D2EB7F044FF89D6D8A00`.
+Get-NetTCPConnection/CIM access was denied; same-token .NET listener enumeration
+and explicit process checks succeeded, but listener owner PID was not newly
+attested. An additional shell read during the active build hit the known
+CreateProcessAsUserW denied5; no security/identity changes or fast retries.
+No real-host test attempted: the previously documented coordinator tool path
+requires unavailable approval in this session. Normal-host fresh-world/player
+validation remains required; do NOT substitute offline-sandbox BDS retries.
+
+Remaining mandatory unprojected CUSTOM keys are damage_blocked_by_shield,
+damage_dealt_resisted and damage_resisted. Existing shield prediction/no-hurt
+and calculated resistance-stage formulas are not silently upgraded to measured
+successful mitigation. Current limited Web projections74/77 != full parity;
+all96 actual-play/SQLite/GUI/API acceptance rows remain unaccepted.
+PROJECT_STATUS stays IN_PROGRESS. No MSPT repeat, no BDS launch/staging, no
+18767 restart, no security/auth/network changes or push/release.
+
+### 2026-11-07 — post-hurt ABSORPTION attribute loss, not notified damage or final HP loss
+
+Implemented two more mandatory CUSTOM sources independently: damage_absorbed
+and damage_dealt_absorbed. The pinned public Player/Mob::$_hurt return and
+SharedAttributes::ABSORPTION / Actor::getAttribute API are used to compare the
+same victim/attribute **before vs after**, not upstream's pre-origin
+min(notified_damage,absorption) estimate. No AGPL code/comments/translations
+copied. Old pre-origin damage_taken/dealt events and semantics remain intact.
+
+| Area | Implemented / verified | Pending / limits |
+| --- | --- | --- |
+| Victim source | Same weak unremoved Actor, Level/dimension, attribute address/definition, positive finite input, DamageProcessed type, optional finite nonnegative returned amount, bounded actual attribute decrease | Real engine/player execution; fully absorbed/cancelled/lethal return behavior |
+| No double count | Root Player→same Mob parent once allowed without a second event; same-hook recursion, second parent, different target/chain mark root ambiguous | Actual26.60 call hierarchy and other-Mod interaction |
+| Quantities | Before/after nearest0.001HP, delta nearest0.1HP; decrease <=input (+1milli rounding tolerance), finite/bounded, zero-unit result omitted | Not final HP loss, theoretical resistance/shield or exact sub-unit fractions |
+| Credited player | Victim player; separately, resolved same-Level direct or child-projectile source Player, re-resolved after origin | Self/environment/thorns/explosion/unknown omitted; two queue rows are not atomic |
+| Storage / UI | Existing kind/schema4/bounded writer, strict native SQL + Python, native personal/rank/common GUI/API reader, JST/player/paging/authenticated Japanese Web | Real player→SQLite→GUI/API/browser and18767 deployment not accepted |
+| Four dashboard categories | Working playtime/activity/rank and accepted TPS/MSPT retained | Full9/77 and per-key actual-play acceptance still required |
+
+New `core/absorption_observation.hpp`, `absorption_sql.hpp`, native
+`player_absorption.cpp/.hpp`, lifecycle/build registration, read projections and
+Japanese labels. Cause `ll26.60.hurt_absorption_delta.v1`. All serialized rows
+say final_health_loss_measured=false, exclusive_causation_verified=false and
+durable_world_commit_verified=false. Attribute address/definition equality is
+an observation, not a generation/world/cross-Mod causal guarantee. Origin and
+its result/exception are preserved despite telemetry failure. No old Actor,
+source or attribute pointer is dereferenced after origin. No game-thread DB I/O.
+
+Verification so far:
+
+- Actual single-adapter pinned26.60 compile PASS:
+  `.build/absorption-probe/run-3dde75715f9b441a84c5dc2d19a0160c/`.
+  Exact compiler-emitted Player::$_hurt, Mob::$_hurt, ABSORPTION and getAttribute
+  names were added to the reviewed import allow-list. Reviewed prior PE has46
+  runtime entries; these4 bring the bounded shape ceiling from48 to50. The
+  exact per-symbol/module/ordinal checks remain. No general import bypass.
+- Targeted Python **5 PASS2.596s**: both roles, rounded quantities, parent
+  restrictions, direct/projectile source contracts, malformed/duplicate/typed/
+  out-of-range rows, nativeSQL/Python exclusion equivalence, period/player/rank/
+  paging, no-record null, read-only auth and actual Japanese stats.js DOM.
+- Final **8 C++ binaries +5 native DB→HTTP/DOM paths PASS** in
+  `.build/travel-v2-tests/run-d5e918fee4c547d78b6de0fe3f8992c8/`.
+  New absorption_tests exercises parent/ambiguity, quantities, source gates,
+  origin once/exception preservation, production builder→StorageWriter→closed
+  SQLite→native personal/rank→integrity=ok. Each key Alice30/Bob20; invalid
+  rows excluded. The same14-row DB gives anonymous401/auth200 and Japanese
+  JS totals50, ranks30/20 with1/10HP units. **Synthetic only**, not engine,
+  real-player, browser, in-game GUI or other-Mod acceptance.
+- Actual **23 native translation units / prelink / DLL link / strict PE /
+  package PASS**, official22202 pinned headers verified (missing0/copied0).
+  Root `.build/server-candidate/run-59ff52144ea24565ba8b3162482a31a4/`.
+  DLL SHA256 `54D94DC520C7C79744835CB54FED62642A84BB80837AB16D73942C91F0521BF8`;
+  ZIP SHA256 `A30F31D8BCCFE3D31A47D2CED80C3153ED0C8B1177AEF3A595950E2FD6028907`.
+  Independent **105 source/script hashes match current**, DLL/ZIP match receipt;
+  actual PE has **50 reviewed runtime symbols**. old_client_import_library_used,
+  matched_server_sdk_verified, runtime_dependencies_verified, bds_load_verified
+  and launch_authorized remain false. This is an official function-import
+  candidate, **not staged or loaded**, not full SDK/release/runtime acceptance.
+- Full Python **152 PASS67.976s**, optimized inventory **2 PASS0.005s**;
+  **69 current inputs match before/after/current source**. Evidence
+  `.build/stats-view-tests/run-85e2cb67eabc4919adb7452d366d1010/`.
+  Native8-binary receipt independently matches **122 current inputs**.
+  These are synthetic/read-path receipts, not actual-player acceptance.
+- Final inventory `.build/parity-audit/run-6ec7cba06e834c8cb7f5a413842f70ca/inventory.json`:
+  **96 mandatory rows, zero accepted**;77 CUSTOM rows actually grouped as
+  CODE_ONLY69 / UNIT_ONLY4 / MISSING4. Optimized inventory replay after doc
+  changes **2 PASS0.004s**. No global test upgrades individual runtime gates.
+- Read-only preservation audit: protected BDS PID748 retains start
+  2026-11-05 01:38:04; viewer PID28268 retains 2026-11-06 06:30:51 and listens
+  only on **127.0.0.1:18767**. Protected run-2bbb... DLL SHA256 is still
+  `B286F054EF1CCF9D90CABBBF3943543FEA2B6FF78805D2EB7F044FF89D6D8A00`.
+  No claim that an owner's live DB bytes remain static; this increment made
+  no protected-world/DB/DLL writes.
+
+Commands with existing cached compiler/SQLite/package environment:
+
+```powershell
+python -W error::ResourceWarning -m unittest discover -s tests -p 'test_absorption.py' -v
+.\scripts\verify_travel_v2.ps1 -WorldTick -FishBucket -RaidEffect -Absorption
+.\scripts\build_server_candidate.ps1
+.\scripts\verify_stats_library.ps1
+python scripts/audit_lk_parity.py
+```
+
+Docs: `docs/ABSORPTION_CAPTURE.md`, updated dashboard/library guides and per-key
+matrix. There are now **73 limited projections**, not73 accepted gameplay
+counters. Four CUSTOM keys remain MISSING: damage_blocked_by_shield,
+damage_dealt_resisted, damage_resisted, time_since_rest. All complete-parity
+coverage and actual-player/SQLite/GUI/API gates remain required; neither enum
+presence, a global compile, fixture data nor empty smoke upgrades acceptance.
+
+Follow-on API audit, not an implementation/acceptance claim: ServerPlayer.h:427
+has MCAPI $normalTick (Player.h:1177 $normalTick is MCNAPI); a durable rest-reset/
+actual Player-tick counter still needs independent design, lifecycle and runtime
+proof. The pinned shield reference uses may-block + no returned damage as an
+inference; cancellation/invulnerability must not be silently called proven
+shield mitigation. Resistance reference uses the post-enchantment basis and
+effect amplifier to calculate a reduction, not a measured HP delta. Public
+Mob::$getDamageAfterEnchantReduction / ActorDamageSource resistance predicates
+exist; a truthful stage/quantity contract and tests are still required. These
+four remain mandatory MISSING work, not a proved absence of all official APIs.
+
+No BDS was staged/started/loaded by this increment; no protected world/DB/DLL
+or running18767 was written/restarted. The coordinator's jump correction and
+other existing work are preserved. No security/auth/network changes, no
+GitHub push/release or deployment. MSPT already accepted, not repeated. Runtime
+acceptance must use the authorized normal-host coordinator and fresh unused
+world/ports. Previous host-tool approval-needed/never denial was not retried
+or bypassed. Do not use an offline-sandbox online BDS retry as DLL evidence.
+
+### 2026-11-07 — raid-related effect changes, not raid outcomes; remaining six CUSTOM source gaps
+
+Continued independent action capture after the fish-bucket checkpoint. Reviewed
+pinned upstream PlayerAddEffect/PlayerCombatStatsHandler factually, without
+copying AGPL source/comments/translations. The old matrix's "effect API private"
+claim was wrong: pinned26.60 Actor.h:679/782 declare addEffect/getEffect(uint)
+MCAPI. Added `player_raid_effect.cpp` and core builder/strict SQL, existing
+runtime lifecycle/writer/StatsReader/API/GUI and Japanese companion projection.
+
+| Area | Implemented / verified | Not accepted |
+| --- | --- | --- |
+| raid_trigger | Same-call RaidOmen=36/600tick post-origin new/changed effect, named SDK enum | Actual raid trigger/participation, effect cause, real26.60 gameplay |
+| raid_win | Same-call VillageHero=29/48000tick post-origin new/changed effect | Actual raid victory/contribution or all effect paths |
+| Guards | Same weak live Player/Level/dimension, exact duration/amplifier, reject unchanged/denied/nested; origin once and engine exceptions preserved | Other-Mod/cmd grants are not distinguishable; no durable world proof |
+| Native / SQLite / Web | Existing schema4/bounded writer; personal and CUSTOM ranking; JST periods/player/paging, anonymous401/auth200/Japanese actual JS DOM on synthetic DB | No game GUI/other-Mod API/player/browser acceptance, no deployment to18767 |
+| Four dashboard categories | Playtime/activity/SQL ranks and genuinely accepted TPS/MSPT preserved | Full9/77 and all96 per-entry runtime acceptance gates remain IN_PROGRESS |
+
+Japanese labels now explicitly say **襲撃前兆効果の付与観測** / **村の英雄効果の付与観測**.
+Input-only requests are not counted. Unchanged same-value grants are excluded;
+refreshes with changed values may count. This deliberately narrower observation
+is not a full-parity claim or a real-raid counter. Cause
+`ll26.60.raid_effect_changed.v1` separates it from old notifications.
+
+Verification so far:
+
+- Single-adapter actual pinned26.60 compile PASS in
+  `.build/raid-effect-probe/run-71f6b1935ed84b98b4b863b962b360ba/`.
+  Only the exact compiler-emitted addEffect/getEffect(uint) MCAPI names were
+  added to the import allow-list. Initial probe failed on scalar TypedStorage
+  `.get()` misuse; corrected to the header's scalar field (no ABI guess).
+- Targeted Python **4 PASS2.240s**: both effect contracts, strict nativeSQL vs
+  Python malformed/duplicate/type/value/source equivalence, new/refresh/empty,
+  JST/day/month/all, selection/rank/paging, read-only auth/actual Japanese JS.
+- Final **7 C++ binaries and4 native-DB HTTP/DOM readbacks PASS** in
+  `.build/travel-v2-tests/run-4c670e98300c4f61a91489aec603cc4a/`.
+  New raid_effect_tests proves gates/origin once/exceptions, production builder
+  through StorageWriter/closed SQLite/native personal and ranking/integrity=ok.
+  Each key has Alice2/Bob1, malformed/source/amount rows excluded; same14-row
+  DB feeds anonymous401/auth200/actual stats.js. All **synthetic**, not engine
+  hook invocation/real raids/browser/player proof.
+- Actual **22 native units / prelink / DLL link / strict PE imports / package
+  PASS**, official22202 pinned headers verified (missing0/copied0). Root
+  `.build/server-candidate/run-03a8a761a7054953a3dee3c2f2012a81/`.
+  DLL SHA256 `DA8DCD927232C6BF8D544BB1667B2ECE0576651A2C13DA6CE113AD73392B335A`;
+  ZIP SHA256 `DF93FF12F7E77EAEF0EE158D3195EB301AA2B6258BDDC6BE7239EFC681868D0B`.
+  Independent **101 source/script hashes match current**, DLL/ZIP match the
+  receipt. Official function-import candidate, not full matched-SDK/runtime/
+  release acceptance; bds_load_verified=false, launch_authorized=false,
+  old_client_import_library_used=false. **Not staged or loaded**.
+- Full Python **147 PASS67.153s**, optimized inventory **2 PASS0.004s**;
+  **66 inputs match before/after/current source**. Evidence
+  `.build/stats-view-tests/run-dfc8fb664cca49d9ad9d6b103d86ddcf/`.
+  Native7-binary receipt independently matches **117 current inputs**.
+  None of these receipts claims BDS/player/browser/persistent-viewer acceptance.
+- A concurrent shell launch returned CreateProcessAsUserW denied5; waited for
+  the existing fixture process to finish before one ordinary launch. No
+  alternative identity/security bypass. Web refetch of the two fixed SDK
+  raw URLs returned cache-miss; no verification was claimed from that fetch.
+  The official22202-file local header/hash check remains the source evidence.
+- Final matrix check: **77 CUSTOM rows: CODE_ONLY67 / UNIT_ONLY4 / MISSING6**.
+  Corrected the old hand-maintained totals to the actual row counts. Final
+  requirement inventory: **96 mandatory rows, zero accepted** in
+  `.build/parity-audit/run-14cfbe5b6f6747689872312cf75a503c/inventory.json`.
+  Replayed optimized inventory tests after documentation corrections:
+  **2 PASS0.003s**. No enumerations/build/fixture promote a runtime gate.
+- Final read-only preservation audit: protected BDS PID748 retains its
+  2026-11-05 01:38:04 start; viewer PID28268 retains 2026-11-06 06:30:51 and
+  LISTENING **127.0.0.1:18767**. Protected run-2bbb... DLL SHA256 remains
+  `B286F054EF1CCF9D90CABBBF3943543FEA2B6FF78805D2EB7F044FF89D6D8A00`.
+  This is process/listener/DLL preservation, not a claim that every live DB
+  byte stayed static while its owner runs. No writes to any protected world/DB.
+
+Commands with cached compiler/SQLite/package env:
+
+```powershell
+python -W error::ResourceWarning -m unittest discover -s tests -p 'test_raid_effect.py' -v
+.\scripts\verify_travel_v2.ps1 -WorldTick -FishBucket -RaidEffect
+.\scripts\build_server_candidate.ps1
+.\scripts\verify_stats_library.ps1
+python scripts/audit_lk_parity.py
+```
+
+Docs: `docs/RAID_EFFECT_CAPTURE.md`, per-key matrix and dashboard/library guides.
+There are now **71 limited Web projections**, including shared world tick and
+pre-origin damage observations, NOT71 accepted gameplay counters. Six mandatory
+keys still lack a projection: damage_absorbed, damage_blocked_by_shield,
+damage_dealt_absorbed, damage_dealt_resisted, damage_resisted, time_since_rest.
+For rest, the pinned upstream mod source search found the key in the catalog,
+not a producer. Public Player sleep thunks exist; the old "no wake API" statement
+was not justified. A matching rest-origin/player-tick/persistence implementation
+and real gameplay remain missing, not optional future scope.
+
+Follow-up read-only API audit also corrected the remaining old availability
+claims: current pinned SharedAttributes.h:38 declares ABSORPTION MCAPI;
+Player.h:1451 declares $_hurt MCAPI; Mob.h:565 declares
+$getDamageAfterEnchantReduction MCAPI. This does **not** establish usable
+runtime linkage or correct absorbed/shield/resistance quantities. No unchecked
+accessor, damage formula or new damage hook was shipped. The six unimplemented
+keys are **MISSING**, not a proved absence of all official API alternatives.
+The public WeakStorageEntity/StackResultStorageEntity implementation also
+confirms that tryUnwrap<Player> calls Player::tryGetFromEntity, not a bare cast.
+
+No BDS staging/start/load, no persistent viewer or protected-world/DB/DLL writes,
+no security/network/auth changes, no push/release. MSPT already accepted, not
+repeated. Runtime acceptance still needs the authorized normal-host coordinator
+with a fresh isolated world/ports. Prior host-tool approval-needed/never denial
+was not retried or circumvented.
+
+### 2026-11-07 — same-call fish-bucket capture, not fishing-rod loot; native SQLite/Web fixtures verified
+
+Implemented an independent `fish_caught` producer and corrected its Japanese
+label to **水生Mobのバケツ捕獲観測**. Pinned LK v0.13.0's interaction hook is a
+bucket-capture path, not fishing-rod loot. The old "Bucket API unavailable"
+declaration was stale: pinned Player.h:979 and BucketItem.h declare both
+Player::interact / BucketItem::$_useOn MCAPI. Upstream source was consulted
+factually only; no source/comments/translations were copied. This implementation
+uses a synchronous thread-local call context, not upstream's timed pending map.
+
+| Area | Implemented / verified | Pending |
+| --- | --- | --- |
+| Native capture | Same main-hand target/ID in one Player::interact + BucketItem child, interaction success/swing, matched water bucket, one child, no nesting, same weak Player/Level/dimension/inventory, corresponding bucket net+1 | Actual player capture on26.60; all observed content IDs/flags |
+| Target state | Weak target resolved after origin: removed_flag vs weak_unavailable recorded separately; no use of stale original Actor/ItemStack reference | Unavailable reference is not proof of final world deletion/commit |
+| Storage / native reads | Existing PlayerInteractionResult/schema4/writer; cause fish_bucket_delta.v1, strict source contract; native personal/CUSTOM ranking and common GUI/API reader | Real event→SQLite→in-game GUI/other-Mod API acceptance |
+| Japanese Web | /stats, authenticated /api/v1/stats, period/player/filter/ranking; honest null and bucket-only definition | Not deployed to18767; no actual-browser/player proof |
+| Four dashboard categories | Existing playtime, other activity, SQL rankings and accepted TPS/MSPT preserved | Full9/77 and all mandatory acceptance gates remain IN_PROGRESS |
+
+Source: new core/fish_bucket.hpp and fish_bucket_sql.hpp,
+levilamina/player_fish.cpp/.hpp, runtime lifecycle, native reader/catalog;
+new companion/fish_bucket_source.py and existing stats_view/catalog projection.
+Registered in xmake and owned candidate/header-compile scripts. Import policy
+adds only the two exact compiler-emitted reviewed MCAPI names. No guessed
+actor numbers/offsets/virtual slots, NBT editing, per-tick DB writes or item/world
+mutation. Main inventory snapshots are bounded to128 slots, only on eligible
+interactions. Offhand, rod loot, no gain/creative paths, unknown types, multiple
+children/nesting, failed interaction, live target and identity/inventory/Level/
+dimension changes are omitted; they are not fabricated zeros or full coverage.
+
+Verification:
+
+- Targeted Python4 tests PASS before final whole-suite replay. Initial malformed
+  fixture found native2048/Python4096 detail-length mismatch; fixed Python's
+  fish-specific limit, not the SQL exclusion. Final protocol also distinguishes
+  target retired state instead of falsely labeling an unresolved weak ref as
+  a directly observed removed flag.
+- Final **6 C++ binaries PASS** and3 native DB→HTTP/DOM readbacks PASS in
+  `.build/travel-v2-tests/run-a9532d0a8c4645a48903cfc278a2cca1/`:
+  travel_window, parity_observation, stats_reader, remote_api, world_tick,
+  fish_bucket tests. The new test exercises exactly-once origin, preserved
+  engine exceptions despite prepare/post/sink failures, success/gain/identity/
+  nested bounds,7 exact type mappings, production builder→StorageWriter→closed
+  SQLite→native personal/rank→integrity=ok. Alice7/Bob1; malformed/source/
+  quantity/duplicate rows excluded. Same12-row native DB→anonymous401/auth200→
+  actual Japanese stats.js DOM PASS (`fish-http-dom-readback.log`). **Synthetic
+  only**, not a trace of real engine hook invocations or real gameplay.
+- Prior protocol's6-binary PASS is retained in run-892e5a1db74048acba98f68b1ab46211;
+  it is not substituted for the final target_after serialization above.
+- Actual **21 native translation units / prelink / DLL link / PE / package
+  PASS**, official22202 pinned headers verified. New owned candidate root
+  `.build/server-candidate/run-c8675dc59f75415f89c5e545b92c284f/`.
+  DLL SHA256 `57617CD0612499C9AE60FF845FD0857AD4106B0C571356D18890BBE23346F0F7`;
+  ZIP SHA256 `52B38D175293D6D27FD1FA2F22F5D33B90AC498679E4AC924399E7D9A3DBB66E`.
+  Independent current-source check: **97 source/script hashes match**, both
+  artifact hashes match receipt. Official function-import candidate, not full
+  matched-SDK/runtime/release acceptance: bds_load_verified=false,
+  launch_authorized=false. No old client import library, no staging or load.
+- Full Python **142 PASS62.979s**, optimized inventory **2 PASS0.005s**;
+  **63 inputs match before/after/current source**. Evidence
+  `.build/stats-view-tests/run-1427ed9c1a2d484795b1cc5f23a1ae4f/`
+  (`regression.json` / both logs). Independent native fixture check:
+  **112 current inputs match** the final6-binary receipt above. These receipts
+  explicitly do not attest BDS/gameplay/persistent-viewer/full-parity acceptance.
+- Final requirement inventory
+  `.build/parity-audit/run-97a6075755604e54b258f9cb44d1e284/inventory.json`:
+  **96 mandatory rows, zero accepted**. No shared build or fixture is promoted
+  to per-key real-player/SQLite/GUI/API evidence.
+
+Commands with the existing cached toolchain/SQLite environment:
+
+```powershell
+python -W error::ResourceWarning -m unittest discover -s tests -p 'test_fish_bucket.py' -v
+.\scripts\verify_travel_v2.ps1 -WorldTick -FishBucket
+.\scripts\build_server_candidate.ps1
+.\scripts\verify_stats_library.ps1
+python scripts/audit_lk_parity.py
+```
+
+Docs: `docs/FISH_BUCKET_CAPTURE.md`, newest Analytics/Stats library sections
+and corrected per-key matrix.69 limited Web projections include the world
+snapshot and2 pre-origin damage amounts; not69 proven gameplay counters.
+Remaining8 unprojected mandatory keys: damage_absorbed,
+damage_blocked_by_shield, damage_dealt_absorbed, damage_dealt_resisted,
+damage_resisted, raid_trigger, raid_win, time_since_rest. All real-action/SQLite/
+GUI/API acceptance remains pending; no enumeration/fixture/empty smoke promotes
+any gate. Full LK parity stays **IN_PROGRESS**.
+
+No BDS was started/staged/loaded, no persistent viewer started, no live SQLite
+or world/DLL changed. Preserve18767 and all protected servers. MSPT's genuine
+09:18 acceptance is done and was not repeated. The previous normal-host ping
+was denied by approval-needed/never policy; no retry via another tool/identity
+or offline online-BDS attempt. New runtime acceptance needs the normal-host
+coordinator's fresh isolated world/ports and scoped real-player actions.
+No security/auth/network changes, GitHub push, release or production deployment.
+
+### 2026-11-07 — engine world-tick snapshot, not telemetry SUM; native/Web readback verified
+
+Implemented `minecraft:total_world_time` as a **shared Level tick ID snapshot**,
+not per-player playtime, not wall-clock/20TPS conversion, and not a sum of
+persisted busy-tick windows. Pinned upstream Form.cpp displays this Level value;
+the earlier matrix's missing *player-specific* API did not prove that the
+shared API was unavailable. No upstream code/comments/translations were copied.
+The prior native SUM(busy samples) projection was corrected; raw history remains.
+
+| Area | Implemented / verified | Still pending |
+| --- | --- | --- |
+| Native source | Pinned public virtual `Level::getCurrentServerTick()` / declared Tick.tickID; one system snapshot per supported >=5s interval window, existing bounded writer | Real26.60 execution/SQLite in fresh normal-host BDS |
+| Persistence | New cause `ll26.60.world_tick_snapshot.v1`, existing ServerTick kind/schema4; no enum renumbering, migration or user DB edits; no fake MSPT sample | Runtime queue/stop behavior beyond synthetic writer |
+| Native personal/API | Last valid world snapshot shared by known players; older larger run not chosen with MAX, no SUM; measured zero retained; world ranking explicitly rejected | Real game GUI and other-Mod interoperability |
+| Japanese Web | `/stats` and authenticated read-only `/api/v1/stats`; world scope, period's last observation, no player multiplication/ranking, stale>30s, null vs measured0, opaque run_key | Actual browser visual/player acceptance; not deployed to18767 |
+| Four dashboard categories | Existing playtime/activity/rankings and genuinely accepted TPS/MSPT preserved | Full9/77 semantics, missing9 keys, per-key gameplay/GUI/API gates |
+
+Changed: new `core/world_tick.hpp`, `world_tick_sql.hpp`, the native on_tick
+capture and StatsReader projection/label; new `companion/world_tick_source.py`,
+Stats library projection/catalog and existing `stats.js`. New native/Python/DOM
+fixtures and `verify_travel_v2.ps1 -WorldTick` option. No guessed offset/virtual
+slot/private `$getCurrentServerTick` call, no packet hook or per-player/tick DB
+writes. Public virtual-call compilation is not proof of runtime ABI behavior.
+
+Verification so far:
+
+- Targeted Python **5 PASS1.416s** (world periods/latest/zero/restart/stale,
+  native/Python SQL equivalence and malformed rows, read-only HTTP/Japanese JS).
+- Extended native fixture **5 binaries PASS**: travel_window_tests,
+  parity_observation_tests, stats_reader_tests, remote_api_tests, world_tick_tests.
+  Evidence `.build/travel-v2-tests/run-081d647e18c34eeea991bf5755055b73/`.
+  Same production snapshot builder→StorageWriter→SQLite→native/API exercised;
+  values1000000→40→0→9 choose the latest, both players see9, rank rejects the
+  shared metric; invalid rows excluded, closed integrity=ok, zero legacy MSPT
+  samples created. `world-http-dom-readback.log` proves same native DB→anonymous401/
+  auth200→actual Japanese stats.js DOM. All are **synthetic, not BDS/player proof**.
+- Actual candidate **20 native translation units / prelink / DLL link / PE /
+  package PASS**, pinned22202 headers verified. New owned root
+  `.build/server-candidate/run-732292c357514063a25ae74401d3e4ec/`.
+  DLL SHA256 `313E073E2AE42D89996F7BF2CED059EE2AF0082F488B0B68536E6B08A94A68E9`;
+  ZIP SHA256 `2AD81259F4BB982304A4F13A799659AB518E8E48E6A2F81D095D2C8F1B1EA6C2`.
+  Independent final check: **93 native source/script hashes unchanged**,
+  DLL/ZIP match their receipt. No new import-policy allowance was needed for
+  this public virtual API. `candidate-evidence.json` retains
+  bds_load_verified=false and launch_authorized=false; full matched-SDK,
+  runtime-dependency and normal-release attestation remain false. No old client
+  import library used. This DLL was **not staged or loaded**.
+- Full Python **138 PASS60.577s**, optimized inventory **2 PASS0.005s**,
+  **60 captured inputs match before/after and current source**. Evidence
+  `.build/stats-view-tests/run-632ee1da2fc4425cad9f3b43a38ea052/`
+  (`regression.json`, both test logs). It explicitly does not attest DLL/BDS/
+  persistent-viewer/full-parity acceptance. Native fixture receipt independently
+  passed with **107 captured inputs still matching**, including the new world test.
+- Final requirement inventory:
+  `.build/parity-audit/run-8d68640c1b4c4bcdbef6755a1b5db96e/inventory.json`,
+  **96 rows, zero accepted**. No shared compile/fixture result promotes any
+  per-key real action/SQLite/GUI/API gate.
+- Earlier fixture runs retained: run-6d148ffecdc14ee9809c81e29fbe9fb7 found a
+  C++ string-concatenation typo, fixed before native link; run-9738e2191e2c45c2b4877de19b1d83b6
+  passed the prior4 binaries but the new API test wrongly expected key/value
+  adjacency despite the Japanese label field. Corrected the test to inspect
+  that object's actual value; no production API/validator weakening.
+
+Commands (same cache environment as the prior section):
+
+```powershell
+.\scripts\verify_travel_v2.ps1 -WorldTick
+.\scripts\build_server_candidate.ps1
+.\scripts\verify_stats_library.ps1
+python scripts/audit_lk_parity.py
+```
+
+Docs: `docs/WORLD_TICK_METRIC.md`, newest Analytics/Stats library and per-key
+matrix sections.68 limited projections now include1 world-shared snapshot and
+2 pre-origin damage amounts; **not68 verified gameplay counters**. Remaining9
+without a Web projection: damage_absorbed, damage_blocked_by_shield,
+damage_dealt_absorbed, damage_dealt_resisted, damage_resisted, fish_caught,
+raid_trigger, raid_win, time_since_rest. These remain mandatory. All96 actual
+acceptance rows remain unaccepted. `PROJECT_STATUS: IN_PROGRESS`.
+
+Runtime boundary: discovered the existing Praxis Sub PC normal-host tools and
+attempted only its harmless ping. It returned **"MCP tool call requires approval,
+but approval policy is never"**. No host shell/BDS was started and no alternate
+tool/identity/security workaround was attempted. The authorized normal-host
+coordinator must perform fresh isolated runtime validation; do not retry online
+BDS in CodexSandboxOffline or redo accepted MSPT. A local diagnostic shell spawn
+during native compilation separately failed CreateProcessAsUserW denied5; kept
+the running build, did not change shell/security or treat it as a DLL crash.
+Protected BDS/18767/old worlds/DB/DLL remain outside all writes; no GitHub push,
+release, new persistent viewer or production deployment. Sites skill followed
+the existing local-only checkout workflow, no registration/sync/publication.
+Final read-only preservation check: BDS748 started2026-11-05 01:38:04 and
+viewer28268 started2026-11-06 06:30:51 are unchanged; netstat confirms
+127.0.0.1:18767 LISTENING28268. Protected original DLL SHA256 still
+`B286F054EF1CCF9D90CABBBF3943543FEA2B6FF78805D2EB7F044FF89D6D8A00`.
+
+### 2026-11-07 — native travel v2 linked; fractional/continuity/JST fixes, SQLite/HTTP/Japanese readback verified
+
+Implemented an independent replacement for the existing server-position travel
+sampler, not a restart of Phase1 or MSPT. Full9/77 parity remains **IN_PROGRESS**.
+Read the full-parity/integration/analytics instructions and pinned26.60 inputs;
+kept existing SQLite schema4, bounded queue/single writer, session analytics,
+rankings and accepted MSPT. No BDS started, staged or loaded in this increment,
+no persistent viewer started, and no change to18767/security/auth/network/GitHub.
+
+| Area | Enabled in source / verified here | Pending boundary |
+| --- | --- | --- |
+|17 travel modes| New `ll26.60.poll_position_delta.v2` fixed windows; fractional cm summed then floored; exact vanilla vehicle IDs, exclusive water modes,3D swim/fly/glide/riding | Actual game flag/vehicle IDs and all modes in a real authenticated player run |
+| Climbing | Official pinned `Actor::onClimbableBlock() const` for ascending samples; exact MCAPI symbol resolved in candidate PE, no block-name heuristic | Actual ladder/vine/scaffold behavior; link is not runtime acceptance |
+| Continuity / time | Reset on gap>1s, step>10blocks, dimension/mount/vehicle/death changes, invalid/reversed clocks, JST day; final bucket uses last actual observation | Conservative omissions; short teleport detection and complete LK numerical parity unproven |
+| Persisted history | v1 retained unchanged, v2 versioned contract; no live DB edits/migration. Shared native event builder→StorageWriter→closed SQLite→StatsReader/ranking/integrity tested | Real player-event-to-SQLite acceptance |
+| Web / rankings | `/actions` and `/stats` accept strict v2 with source/units/limits, day/month/all, selected player/type and stable ranking; actual fixture HTTP JSON→actual Japanese JS DOM | Not a visual browser screenshot, game GUI or other-Mod runtime call |
+| Playtime / TPS / MSPT | Existing playtime/session safety, authenticated UI and accepted telemetry preserved; regressions pass | No re-acceptance/rework of genuine09:18 MSPT required |
+| Full LK features | Existing9-category/77-key library and3 commands/4 APIs preserved; per-key matrix corrected for v2 |10 keys still lack projections; all mandatory gameplay/GUI/interop gates remain open |
+
+Source: `core/travel_observation.hpp`, new `travel_window.hpp`,
+`travel_event.hpp`, `travel_sql.hpp`, `levilamina/player_travel.cpp/.hpp`,
+`core/stats_reader.cpp`, new `companion/travel_source.py`, `analytics.py`,
+`stats_view.py`. No guessed offsets/packet hooks, no per-tick SQLite writes.
+The PE import policy adds only `?onClimbableBlock@Actor@@QEBA_NXZ`, declared
+MCAPI in pinned `Actor.h`; no broad allowlist relaxation or resolver rewrite.
+
+Reproducible commands using existing caches:
+
+```powershell
+$env:BEDROCKINSIGHT_CLANGCL_ROOT='C:\Dev\LL2660Toolchain-20261029\clang+llvm-23.1.4-x86_64-pc-windows-msvc\bin'
+$env:BEDROCKINSIGHT_SQLITE_ROOT='C:\Users\chihirosub\AppData\Local\.xmake\packages\s\sqlite3\3.54.0+100\b897e7007f3d49769c227e337e14fdef'
+$env:BEDROCKINSIGHT_XMAKE_PACKAGES='C:\Dev\LL2660BuildCache\.xmake\packages'
+.\scripts\build_server_candidate.ps1
+.\scripts\verify_travel_v2.ps1
+.\scripts\verify_stats_library.ps1
+python scripts/audit_lk_parity.py
+```
+
+- Actual native candidate **compile/prelink/link/PE/package PASS**,20 native
+  translation units, separate build root
+  `.build/server-candidate/run-38e460add06742628c8ff265945eaebc/`.
+  DLL SHA256 `993F3858F64F164F90E2D819DEF70493516ECF0CE7BF88BE30011B6792ACF1F4`;
+  ZIP SHA256 `27093B98FCC1BDAD43C0F3EF7FC6A55AFEDE7A6D720DF79DC0A3AE19C908118E`.
+  Independent final check: **91 captured native source/script hashes match**,
+  DLL/ZIP hashes match. `mod-pe.txt:577` contains the exact climb import.
+  `candidate-evidence.json` correctly retains launch_authorized=false,
+  bds_load_verified=false, matched_server_sdk_verified=false and
+  runtime_dependencies_verified=false. This is not a full SDK/runtime or
+  normal release attestation. Old client import library was not used.
+- **4 C++ binaries PASS** (`travel_window_tests`, `parity_observation_tests`,
+  `stats_reader_tests`, `remote_api_tests`) in
+  `.build/travel-v2-tests/run-1845c7962d3e421a9dcfe076abc39025/`.
+  `fixture-evidence.json` passed=true; captured native inputs still match.
+  Production builder/writer emitted a closed7-row synthetic DB: v2walk19 +
+  v1walk5 gives Alice24; Bob10; malformed/duplicate/mismatched rows excluded;
+  integrity_check=ok. Same DB→anonymous401/auth200→both Japanese JS views PASS
+  (`http-dom-readback.log`). This is synthetic, **not real gameplay**.
+- Full Python **133 tests PASS69.872s**, optimized inventory **2 PASS**,
+  **57 captured inputs unchanged**, final independent hash check also matches.
+  Evidence `.build/stats-view-tests/run-bb4f6a25dad74ca8a9644bdd5cd5e796/`
+  (`regression.json`, `python-tests.log`, `optimized-inventory.log`). Receipt
+  explicitly says no DLL/BDS/persistent viewer/full-parity acceptance.
+- Updated the17 per-key movement acquisition rows and corrected climb's old
+  MISSING declaration; final requirement inventory
+  `.build/parity-audit/run-b22dc10235974d56a3630cdee91fa323/inventory.json`
+  still has **96 mandatory rows, zero accepted**. Inventory tests rerun after
+  the matrix edit:2 PASS. The inventory intentionally does not convert a
+  shared compile/fixture receipt into per-key actual-player proof.
+- Earlier failed native harness runs are retained: run-1275de3b46464016921ffbf4621ed485
+  lacked two core dependencies, run-6dea1b6ecc29430bb160b34866064882 used an
+  external custom: selector at the internal bare-key API, and
+  run-7d25937f250d4e33b4a363d3de5fbb29 had invalid legacy fixture JSON.
+  Fixed the harness/fixture, not the strict reader. Earlier Python run-a2c009f44c654f7bba8baa7ca820d112
+  failed2 expected definition-wording checks; restored explicit period and
+  non-completeness wording, then reran all133. No security/runtime workaround.
+- Sites skill followed local-only guidance for the existing checkout; no
+  registration/sync/publication, new site/project or external hosting. Existing
+  upstream AGPL source was read for factual mode/unit comparison only; new
+  window/event/SQL/Python code and documentation were independently authored.
+
+Read-only preservation audit: BDS748 still started2026-11-05 01:38:04;
+viewer28268 still started2026-11-06 06:30:51, listening only at127.0.0.1:18767.
+Protected original test DLL remains
+`B286F054EF1CCF9D90CABBBF3943543FEA2B6FF78805D2EB7F044FF89D6D8A00`.
+No file in either protected server/world was changed. No player UI operated.
+
+Docs: `docs/TRAVEL_CAPTURE_V2.md`, updated `docs/ANALYTICS_DASHBOARD.md`,
+`docs/STATS_LIBRARY.md`, per-key `docs/LK_FULL_PARITY_MATRIX.md`.
+Remaining10 unprojected keys: damage_absorbed, damage_blocked_by_shield,
+damage_dealt_absorbed, damage_dealt_resisted, damage_resisted, fish_caught,
+raid_trigger, raid_win, time_since_rest, total_world_time. The67 limited
+projections include2 pre-origin damage observations, not final HP outcomes.
+No mandatory key has new actual-player acceptance. Full in-game commands,
+other-Mod4API interoperability, capture completeness, translations and history
+acceptance remain mandatory, not optional follow-ups.
+
+Next real online-BDS/player validation requires the existing authorized
+**normal-host coordinator**, fresh unused world/ports and the participants'
+explicitly scoped actions. Do not run online BDS inside CodexSandboxOffline,
+reuse old scratch or change protected BDS/viewer/security. Use the latest
+candidate/hash/source receipt and the v2 mode checklist, not an old smoke or
+MSPT proof. Current native DLL was **not staged or loaded**.
+
+### 2026-11-07 — authenticated nine-category/77-key Web library; local regression verified
+
+Added the independently authored Japanese `/stats` interface and authenticated
+read-only `/api/v1/stats` to the existing Python companion. This increment is
+**not deployment to18767, not a native DLL build, and not full LK parity**.
+Sites skill used in local-only mode: retained this checkout/implementation,
+skipped external registration, synchronization and publication. No new project,
+hosting credentials, network/security change or Git push/release.
+
+| Area | Implemented / verified here | Still pending |
+| --- | --- | --- |
+| Playtime | Existing root dashboard retained; new CUSTOM closed-session lower bounds, union/clipping/JST/no abandoned-open growth fixtures | True continuous play-tick parity and new actual-play acceptance |
+| Activity |9 categories /77 selectable keys, independent Japanese labels, type details, source definitions, unknown/null states; later concurrent source projections preserved | Remaining capture/semantic gaps and every mandatory actual-player gate |
+| Rankings | SQL-backed day/month/all, selected-player details vs global same-metric ranking, literal Japanese/ID search, exact type filter, stable ties, independent bounded pages;253-type fixture | Actual recorded game actions across all keys and in-game GUI/API acceptance |
+| TPS / MSPT | Accepted09:18 baseline preserved; existing live/stale/no-sample tests pass | No new MSPT work needed; not redeployed to protected viewer/BDS |
+| Authentication | Loopback-only / Bearer / same-origin / read-only reused; request races,401 logout,503 clearing and literal names exercised with actual fixture HTTP JSON and real JS DOM | No actual-browser visual or real-player screenshot claim |
+| In-game GUI /4 calling APIs | Existing independent implementation preserved, no C++ edits/build/staging in this increment | Full77 gameplay, three real GUI commands, other-Mod/API compatibility and per-key acceptance remain required |
+
+Implementation: `companion/stats_catalog.py`, `stats_view.py`, the new
+`web/stats.html/.js/.css`, companion server routing and `/actions` navigation.
+Old root `index.html`, `app.js`, `styles.css` were not edited. All quantities
+remain source-scoped observations, not a guarantee of complete capture. Current
+catalog has67 limited projections (including2 **pre-origin amount** observations)
+and10 without a projection; those counts are not native/runtime acceptance.
+Original26/27 projection counts in earlier progress are superseded.
+
+Follow-up inspection of the concurrent merged producers found misleading
+“real damage” wording for `phase:pre_origin_amount`. Corrected both `/stats`
+and `/actions` labels/definitions and added `observation_stage` plus
+`final_world_outcome_verified:false`. Later cancellation/modification and final
+HP/absorption/resistance are NOT measured by these rows. Preserved raw history;
+no counter was fabricated or promoted to a final-world result. New strict
+checks pair use-method ordinal/name, CreatedOutput screen/branch, integer
+result0 (not bool false), cause-code fields and source entity flags. New usage
+sources without their serialized contract are excluded. PvP pre-origin amount
+is not incorrectly dropped solely because victim type is minecraft:player.
+
+Tests / replay:
+
+```powershell
+.\scripts\verify_stats_library.ps1
+python scripts/audit_lk_parity.py
+```
+
+The verifier invokes `python -W error::ResourceWarning -m unittest discover -s
+tests -p 'test_*.py' -v`, then optimized inventory tests, captures before/after
+SHA256 for all companion/test source inputs plus the verifier/log helper, and
+fails closed on source-list/hash drift. It starts only fixture-owned ephemeral
+loopback HTTP servers, shuts them down, and never starts BDS or a persistent viewer.
+
+- Final **129 tests PASS55.564s**, optimized inventory **2 PASS**, all **54
+  captured inputs match before/after**. Durable evidence:
+  `.build/stats-view-tests/run-c1268e0a44df496fa9af2ce05408511d/`
+  (`python-tests.log`, `optimized-inventory.log`, `regression.json`). Receipt
+  explicitly has native_dll_built/bds_started/persistent_viewer_started/
+  full_parity_accepted=false.
+- Earlier129 PASS55.805s /52-input guard is retained in run-4f0c8a82251c489c87674921cab900f6.
+  Earlier123 PASS and the16-test target-description mismatch during concurrent
+  edits are retained in run-1117ab4cbc704bae9d063be2d5a9d388; neither is claimed
+  as verification of the later source. Concurrent additions were preserved.
+- Latest inventory at this point: `.build/parity-audit/run-2b2c2f8a9730476b84c84faf690263a3/inventory.json`,
+  **96 mandatory rows, zero accepted**. No enum/label/fixture/empty BDS smoke
+  promotes a gameplay gate. License provenance and native safety review of
+  concurrent additions remain separate from this local Web regression.
+
+Usage/semantics: `docs/STATS_LIBRARY.md` and the newest section of
+`docs/ANALYTICS_DASHBOARD.md`. Example separate-process URL
+`http://127.0.0.1:18768/stats` is **not started**; use only an explicit approved
+DB and a separately available port, fresh random viewer token and private SSH
+forward if needed. Preserve18767. Protected BDS748 / viewer28268 and original
+DLL SHA256 B286F054EF1CCF9D90CABBBF3943543FEA2B6FF78805D2EB7F044FF89D6D8A00
+were read-only checked unchanged. No real game actions were exercised here.
+
+Full9/77 + all commands/APIs/history/translation acceptance remains mandatory
+and **IN_PROGRESS**. Future real online-BDS acceptance must use the authorized
+normal-host coordinator with fresh isolated world/ports, never an offline
+sandbox retry or protected-server modification. Existing MSPT acceptance is done.
+
 ## 2026-11-07 source audit correction: actual 26.60 interaction and trade producers
 
 This entry supersedes the previous leading report, which described hooks that are not present in this source tree. Full LK-Stats 9-category/77-CUSTOM parity remains IN_PROGRESS; real-player capture acceptance has not passed.

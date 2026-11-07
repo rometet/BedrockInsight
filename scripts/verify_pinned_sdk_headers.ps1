@@ -87,6 +87,12 @@ $compileOptions = @($arguments)
 foreach ($name in @('mod.cpp','runtime.cpp','busy_tick.cpp','player_actions.cpp','player_death.cpp','player_modes.cpp','player_pickup.cpp','player_jump.cpp','player_kills.cpp','player_hurt.cpp','player_item_use.cpp','player_item_transfer.cpp','player_block.cpp','player_block_interaction.cpp','player_travel.cpp','player_damage.cpp','player_trade.cpp','player_breed.cpp','player_target.cpp','stats_command.cpp')) {
     $arguments += Join-Path $projectRoot "src/bedrock_insight/levilamina/$name"
 }
+$arguments += Join-Path $projectRoot 'src/bedrock_insight/levilamina/player_fish.cpp'
+$arguments += Join-Path $projectRoot 'src/bedrock_insight/levilamina/player_raid_effect.cpp'
+$arguments += Join-Path $projectRoot 'src/bedrock_insight/levilamina/player_absorption.cpp'
+$arguments += Join-Path $projectRoot 'src/bedrock_insight/levilamina/player_rest.cpp'
+$arguments += Join-Path $projectRoot 'src/bedrock_insight/levilamina/player_resistance.cpp'
+$arguments += Join-Path $projectRoot 'src/bedrock_insight/levilamina/player_shield_evidence.cpp'
 Push-Location -LiteralPath $buildRoot
 try {
     . (Join-Path $PSScriptRoot 'invoke_logged_native.ps1')
@@ -100,6 +106,18 @@ $objects = @('mod.obj','runtime.obj','busy_tick.obj','player_actions.obj','playe
     $path = Join-Path $buildRoot $_
     [pscustomobject]@{path=$path;sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash}
 }
+$fishObjectPath=Join-Path $buildRoot 'player_fish.obj'
+$objects += [pscustomobject]@{path=$fishObjectPath;sha256=(Get-FileHash -LiteralPath $fishObjectPath -Algorithm SHA256).Hash}
+$raidObjectPath=Join-Path $buildRoot 'player_raid_effect.obj'
+$objects += [pscustomobject]@{path=$raidObjectPath;sha256=(Get-FileHash -LiteralPath $raidObjectPath -Algorithm SHA256).Hash}
+$absObjectPath=Join-Path $buildRoot 'player_absorption.obj'
+$objects += [pscustomobject]@{path=$absObjectPath;sha256=(Get-FileHash -LiteralPath $absObjectPath -Algorithm SHA256).Hash}
+$restObjectPath=Join-Path $buildRoot 'player_rest.obj'
+$objects += [pscustomobject]@{path=$restObjectPath;sha256=(Get-FileHash -LiteralPath $restObjectPath -Algorithm SHA256).Hash}
+$resistObjectPath=Join-Path $buildRoot 'player_resistance.obj'
+$objects += [pscustomobject]@{path=$resistObjectPath;sha256=(Get-FileHash -LiteralPath $resistObjectPath -Algorithm SHA256).Hash}
+$shieldObjectPath=Join-Path $buildRoot 'player_shield_evidence.obj'
+$objects += [pscustomobject]@{path=$shieldObjectPath;sha256=(Get-FileHash -LiteralPath $shieldObjectPath -Algorithm SHA256).Hash}
 [ordered]@{
     compile_only = $true
     header_source_commit = $headers.source_commit

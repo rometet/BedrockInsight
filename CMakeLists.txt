@@ -20,6 +20,7 @@ if(BEDROCKINSIGHT_BUILD_CORE)
         src/bedrock_insight/core/http_server.cpp
         src/bedrock_insight/core/http_transport.cpp
         src/bedrock_insight/core/json.cpp
+        src/bedrock_insight/core/type_labels.cpp
         src/bedrock_insight/core/metrics.cpp
         src/bedrock_insight/core/rollback.cpp
         src/bedrock_insight/core/sqlite_api.cpp

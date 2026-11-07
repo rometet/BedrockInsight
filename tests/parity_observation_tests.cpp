@@ -31,7 +31,9 @@ int main() {
         f.on_ground = false;
         assert(classify_travel(f) == TravelMode::Fall);
         f.in_water = true;
-        assert(classify_travel(f) == TravelMode::Swim);
+        assert(classify_travel(f) == TravelMode::WalkOnWater);
+        f.under_water = true;
+        assert(classify_travel(f) == TravelMode::WalkUnderWater);
         f.swimming = true;
         assert(classify_travel(f) == TravelMode::Swim);
         f = {};

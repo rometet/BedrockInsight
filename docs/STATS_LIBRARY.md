@@ -1,5 +1,35 @@
 # 9分類・CUSTOM77項目の日本語統計ライブラリ
 
+`damage_resisted`／`damage_dealt_resisted`へ[相関した耐性量の参照式](RESISTANCE_CAPTURE.md)を追加。
+最終HP損失・実適用軽減量の実測ではなく、同じ処理内のエンチャント後の値と効果から算出します。
+ラベル・状態欄とも計算値と明示。現在76の限定投影で、[盾の取得](SHIELD_CAPTURE_FINDINGS.md)と
+全機能の実プレイ／SQLite／GUI／API受入は未完了。稼働系へは配備しません。
+
+`time_since_rest`へ[睡眠観測後のPlayer tickの最終保存値](REST_CAPTURE.md)を接続。
+初期・再接続・途絶は不明、実際の睡眠観測で0へresetし、完了Player tickだけを数えます。
+個人別最新snapshotを読み、全履歴のSUM/MAXや壁時計で補いません。休息追補時74、耐性式追補後76の限定投影です。
+既知0は表示、不明null、順位は正の既知値のみ。実BDS/player/GUI/APIの受入は未完了です。
+
+`damage_absorbed`／`damage_dealt_absorbed`へ[吸収属性の減少観測](ABSORPTION_CAPTURE.md)を
+追加。1/10HP（丸め）で表示し、通知量の推計や最終HP損失とは分離します。未記録null。
+耐性式追補を含む現在は76の限定投影です。盾の1キーと
+全機能の実プレイ／GUI／API受入が引き続き必須です。18767への配備は行いません。
+
+`raid_trigger`／`raid_win`は[襲撃関連効果の付与観測](RAID_EFFECT_CAPTURE.md)へ接続しました。
+Actorの付与後の効果変化を確認しますが、実際の襲撃発生・勝利や効果の由来は証明しません。
+同値／拒否／再入れ子を除き、未記録null。耐性式追補を含む76の限定投影であり全77項目完成ではありません。
+残る盾は必須の未実装として維持します。
+
+`fish_caught`は[水生Mobのバケツ捕獲観測](FISH_BUCKET_CAPTURE.md)へ接続しました。
+釣り竿の釣果とは異なるためラベルを訂正し、限定sourceと欠測条件を表示します。
+
+`total_world_time`は[ワールド共有tickの最終観測値](WORLD_TICK_METRIC.md)に対応しました。
+Playerの選択や人数で値を増やさず、順位対象外。再起動を跨ぐSUM/MAXや壁時計補間は行いません。
+
+移動は[新しいv2ソース](TRAVEL_CAPTURE_V2.md)にも対応しました。下の旧「保存時刻へバッチ配賦」
+はv1履歴の定義です。v2は連続性とJST日境界を検査し、最後の実観測時刻へ保存します。
+実機受入済みという意味ではありません。
+
 この追補は読み取り専用Webの実装です。**全機能同等性の完成宣言ではありません。**
 キーを選べること、SQLite fixtureで値が出ること、DLLがロードされることと、
 実プレイヤーの行動を正しく収集できることは別の受入条件です。
@@ -57,26 +87,30 @@ JSの安全な整数範囲を超えた値は丸めて表示せず「表示精度
 | --- | --- | --- |
 | mined | GameMode true応答＋同座標の種類変化、回 | 破壊試行、全破壊経路、保存完了 |
 | broken | 主所持品同一slotの耐久閾値と1→0消失、回 | 防具／副手など全破損の網羅 |
-| crafted | 成功要求の出力種類・数量の申告、個 | 最終inventory commit、NBT、精錬、取引 |
-| used | useItem true応答＋主所持品照合、回 | 効果完了、消費成立、全用途の使用数 |
+| crafted | 旧成功要求の申告、CreatedOutput転送応答、かまど等の処理前モデル減少、個 | 全ソースの最終inventory commit、全レシピ・NBT・取引の受入 |
+| used | 旧GameMode true応答、consumeItem付きPlayer処理終了、非防具耐久処理応答、回 | 使用効果完了、実消費成立、全用途の使用数 |
 | picked_up | take true応答中の主所持品同種類の増加、個 | 入口stack個数、全拾得、永続転送 |
 | dropped | 非randomlyのdrop true応答時の入口個数、個 | 在庫差分、生成物の保存完了 |
 | killed | 直接攻撃／子飛び道具所有者の解決＋死亡フラグ、回 | 全キル、環境・不明・自己帰属 |
 | killed_by | 新ソースの解決済み死亡元エンティティ種類、回 | 原因コードをエンティティに見立てること |
 | custom | 選んだ1キーの限定観測、キー固有単位 | 個数・距離・時間を足した総合得点 |
 
-新しく補ったcraft/broken/移動/sleep/sneak/繁殖/村人の読取では、hook・phase・bool/intの型、
+craft/broken/移動/sleep/sneak/繁殖/村人・後続相互作用ソースの読取では、hook・phase・bool/intの型、
 数量や関連フィールドの一致を確認し、不正JSON・重複キー・NaN/Infinityを拒否します。
 未対応source、処理前通知、旧ヒューリスティックを確定結果へ置き換えません。
 その他の分類も既存の専用source validatorと種類・時刻・actor条件を通した行だけです。
 
-## CUSTOM: 27の限定読取と50の未対応
+## CUSTOM: 読取経路と実際の意味を分ける
 
 77項目すべてに独自の日本語表示ラベルがあります。分類やキーの登録は収集証明ではありません。
 この画面の `projection_supported` は**読取SQLがある**という意味であり、
 ネイティブフック／GUI／RemoteCallの受入完了や全経路対応を意味しません。
 
-限定読取を接続した27キー（並行作業の`target_hit`読取追加も保持）:
+初版の26キー、その後のtarget追加時の27キーという数は履歴です。並行作業の相互作用・
+出力転送・追加移動ソースも保持しています。現在の対応判定は認証APIの`catalog.custom`から
+得られます。固定の対応数をネイティブの機能数・受入済み数に読み替えないでください。
+
+限定読取の主な意味:
 
 - `animals_bred`, `talked_to_villager`: 新sourceのoffspring非空／Player帰属の申告、
   openTrading正常終了後のtarget解決。子の生存、画面の実表示、取引commitを確認した値ではありません。
@@ -91,10 +125,20 @@ JSの安全な整数範囲を超えた値は丸めて表示せず「表示精度
 - `walk/sprint/crouch/swim/fly/aviate/fall/boat/minecart/pig/strider/horse/nautilus/happy_ghast_one_cm`:
   各々独立した14キー。5秒の位置差分バッチを保存時刻で期間分けします。
   境界を跨いだ距離の復元、全移動モード、全テレポート除外は未検証です。
+- 登攀／水面歩行／水中歩行の後続3モードも新ソースがある場合に読めますが、
+  旧DLLの欠測や誤分類を修復したことにはなりません。
+- 容器・設備等の相互作用はBlock::use応答や専用sourceのhook/phase/種類・キー一致を確認します。
+  旧`PlayerInteractBlockEvent`を成功へ置き換えず、実際のGUI表示・保存完了は別の受入です。
+- `enchant_item`, `traded_with_villager`, `play_record`の後続ソースも限定読取します。
+  成功転送の応答と実画面・取引相手の確定、void使用処理終了と再生完了は同じではありません。
+- `damage_taken`, `damage_dealt`は**処理前の申告量**として表示します。
+  `observation_stage:pre_origin_notification`、`final_world_outcome_verified:false`。
+  source名にreal_damageが含まれていても、後段取消・変更、吸収／耐性、最終HP適用の測定ではありません。
+  対応するcauseコード・entity/environmentフラグを照合し、攻撃回数は代用しません。
 
-残り50キーはこの読取経路では `status:unsupported`、値null、順位なしです。
-たとえばdamage_*、大釜・容器・設備の処理前相互作用、襲撃、釣り、エンチャント、
-登攀／水面歩行／水中歩行、time_since_rest/total_world_timeなどを推測しません。
+読取未対応キーは `status:unsupported`、値null、順位なしです。
+吸収・盾・耐性内訳の5damageキー、襲撃発生／勝利、釣り、time_since_rest、total_world_time
+の対応を捏造しません。処理前のdamage量表示も、これらの実ダメージ取得の代わりではありません。
 別のネイティブ候補があっても、この画面の限定読取を自動的に実機受入済みへ
 昇格しません。未対応表示も公式API不存在の宣言ではありません。
 
@@ -117,11 +161,18 @@ JSの安全な整数範囲を超えた値は丸めて表示せず「表示精度
 書込HTTPは405。これは独自のWeb読取APIで、要求された4つのRemoteCall APIや
 LegacyRemoteCall wire互換の代わりではありません。
 
-テスト: `python -W error::ResourceWarning -m unittest discover -s tests -p 'test_*.py' -v`。
-`test_stats_view.py`は9分類、77キーの選択、27限定読取、期間・型・欠測・253種類ページング・
+再現用検証: `./scripts/verify_stats_library.ps1`。
+全Python/HTTP/DOMテストと最適化inventoryテスト、ソースの検証前後ハッシュを記録します。
+新しい`.build/stats-view-tests/run-<uuid>/regression.json`はfixture検証と実機受入を分け、
+並行編集で入力が変化した場合は失敗にします。BDSや常駐viewerを起動しません。
+直接テストする場合は `python -W error::ResourceWarning -m unittest discover -s tests -p 'test_*.py' -v`。
+`test_stats_view.py`は9分類、77キーの選択、限定読取、期間・型・欠測・253種類ページング・
 auth/read-only/historyをfixtureで確認し、実HTTPのJSONを`stats_library_ui_tests.cjs`へ渡して
 実際のJSのDOM反映、単位、日本語／未知ID、名前のliteral表示、検索、独立ページ、
 古い応答の除外、503、logout/401の消去を検査します。実ブラウザー画像や実プレイの証明ではありません。
+`test_stats_contracts.py`は使用方法のIDと名前の対応、出力転送の画面とbranchの対応、
+boolを整数0/1に見立てない検証、情報不足の新使用sourceの除外、PvPを含む処理前量の
+表示段階を検査します。furnaceの処理前モデル量と旧craft出力申告を全行commit済みと表示しません。
 
 元の4区分（プレイ時間・行動・ランキング・TPS/MSPT）は `/` と `/actions` も引き続き利用できます。
 真のMSPTの既受入は変更せず、停止後・古いsampleを現在値にしません。

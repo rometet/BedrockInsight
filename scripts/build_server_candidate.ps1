@@ -20,6 +20,15 @@ $profileHash=(Get-FileHash -LiteralPath $profilePath -Algorithm SHA256).Hash
 $profile=Get-Content -Raw -LiteralPath $profilePath|ConvertFrom-Json
 $sourceFiles=@('levilamina/mod.cpp','levilamina/runtime.cpp','levilamina/busy_tick.cpp','levilamina/player_actions.cpp','levilamina/player_death.cpp','levilamina/player_modes.cpp','levilamina/player_pickup.cpp','levilamina/player_jump.cpp','levilamina/player_kills.cpp','levilamina/player_hurt.cpp','levilamina/player_item_use.cpp','levilamina/player_item_transfer.cpp','levilamina/player_block.cpp','levilamina/player_block_interaction.cpp','levilamina/player_travel.cpp','levilamina/player_damage.cpp','levilamina/player_trade.cpp','levilamina/player_breed.cpp','levilamina/player_target.cpp','levilamina/stats_command.cpp','core/admin_api.cpp','core/event.cpp','core/rollback.cpp','core/sqlite_api.cpp','core/storage.cpp','core/stats_reader.cpp','core/remote_api.cpp')|
     ForEach-Object{Join-Path $projectRoot "src/bedrock_insight/$_"}
+$sourceFiles+=Join-Path $projectRoot 'src/bedrock_insight/levilamina/player_fish.cpp'
+$sourceFiles+=Join-Path $projectRoot 'src/bedrock_insight/levilamina/player_raid_effect.cpp'
+$sourceFiles+=Join-Path $projectRoot 'src/bedrock_insight/levilamina/player_absorption.cpp'
+$sourceFiles+=Join-Path $projectRoot 'src/bedrock_insight/levilamina/player_rest.cpp'
+$sourceFiles+=Join-Path $projectRoot 'src/bedrock_insight/levilamina/player_resistance.cpp'
+$sourceFiles+=Join-Path $projectRoot 'src/bedrock_insight/levilamina/player_shield_evidence.cpp'
+$sourceFiles+=Join-Path $projectRoot 'src/bedrock_insight/core/json.cpp'
+$sourceFiles+=Join-Path $projectRoot 'src/bedrock_insight/core/type_labels.cpp'
+$sourceFiles+=Join-Path $projectRoot 'companion/lang/ja_JP.json'
 $sourceFiles+=@(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src/bedrock_insight') -File -Recurse|
     Where-Object{$_.Extension -in @('.h','.hpp')}|ForEach-Object{$_.FullName})
 $sourceHashes=@($sourceFiles|Sort-Object -Unique|ForEach-Object{[pscustomobject]@{path=$_;sha256=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash}})
@@ -82,7 +91,7 @@ foreach($object in $compile.objects){
     $nativeObjects+=$copy
     $nativeObjectHashes+=[pscustomobject]@{path=$copy;sha256=$object.sha256}
 }
-$coreNames=@('admin_api','event','rollback','sqlite_api','storage','stats_reader','remote_api')
+$coreNames=@('admin_api','event','rollback','sqlite_api','storage','stats_reader','remote_api','json','type_labels')
 $coreArguments=@($compile.compile_options)
 foreach($name in $coreNames){$coreArguments+=Join-Path $projectRoot "src/bedrock_insight/core/$name.cpp"}
 $dll=Join-Path $buildRoot 'BedrockInsight.dll'
@@ -156,6 +165,11 @@ $packageMod=Join-Path $packageRoot 'BedrockInsight'
 New-Item -ItemType Directory -Path $packageMod|Out-Null
 foreach($path in @($dll,(Join-Path $buildRoot 'BedrockInsight.pdb'),$nativeManifestPath)){Copy-Item -LiteralPath $path -Destination $packageMod}
 Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md') -Destination $packageMod
+$packageLang=Join-Path $packageMod 'lang'
+New-Item -ItemType Directory -Path $packageLang | Out-Null
+Copy-Item -LiteralPath (Join-Path $projectRoot 'companion/lang/ja_JP.json') -Destination (Join-Path $packageLang 'ja_JP.json')
+if((Get-FileHash -LiteralPath (Join-Path $packageLang 'ja_JP.json')).Hash -ine
+   (Get-FileHash -LiteralPath (Join-Path $projectRoot 'companion/lang/ja_JP.json')).Hash){throw 'Packaged type labels mismatch'}
 New-Item -ItemType Directory -Path (Join-Path $packageMod 'licenses') -Force|Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot 'licenses/Pier-Apache-2.0.txt') -Destination (Join-Path $packageMod 'licenses')
 Copy-Item -LiteralPath (Join-Path $buildRoot 'NOT_RUNTIME_VERIFIED.txt') -Destination $packageRoot
@@ -163,6 +177,8 @@ $zip=Join-Path $buildRoot 'BedrockInsight-server-candidate.zip'
 # Manual-install mod folder only; no Tooth installer/runtime/SDK facade.
 & tar.exe -a -c -f $zip -C $packageRoot BedrockInsight NOT_RUNTIME_VERIFIED.txt
 if($LASTEXITCODE -ne 0){throw 'Candidate archive creation failed'}
+foreach($record in $sourceHashes){if((Get-FileHash -LiteralPath $record.path -Algorithm SHA256).Hash -ine $record.sha256){throw 'Source or cosmetic asset changed during packaging'}}
+foreach($record in $buildScriptHashes){if((Get-FileHash -LiteralPath $record.path -Algorithm SHA256).Hash -ine $record.sha256){throw 'Build/PE-policy script changed during packaging'}}
 [ordered]@{
     artifact_kind='official-server-function-import-candidate';built_utc=[DateTime]::UtcNow.ToString('o')
     official_server_functions_verified=$true;old_client_import_library_used=$false
@@ -183,6 +199,7 @@ if($LASTEXITCODE -ne 0){throw 'Candidate archive creation failed'}
     compiler=$compile.compiler;core_arguments=$coreArguments;link_arguments=$linkArguments
     bds_profile_sha256=$profileHash;dll=$dll;dll_sha256=(Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash
     candidate_zip=$zip;candidate_zip_sha256=(Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+    packaged_type_labels=[ordered]@{path=(Join-Path $packageLang 'ja_JP.json');sha256=(Get-FileHash -LiteralPath (Join-Path $packageLang 'ja_JP.json')).Hash}
 } |ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $buildRoot 'candidate-evidence.json') -Encoding UTF8
 'SERVER-DERIVED NATIVE CANDIDATE BUILD PASS; no full SDK or BDS runtime acceptance'
 Get-FileHash -LiteralPath $dll,$zip -Algorithm SHA256|Format-List

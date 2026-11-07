@@ -5,8 +5,9 @@ from pathlib import Path
 import subprocess
 import threading
 
-from companion.jump_source import JUMP_SOURCE,valid_jump_details
+from companion.jump_source import JUMP_SOURCE,JUMP_EVENT_SOURCE,valid_jump_details
 from companion.server import CompanionServer
+from companion.stats_catalog import type_label
 from test_analytics_companion import Fixture,fixture_writer,BASE
 
 
@@ -33,6 +34,25 @@ class JumpActivityTests(Fixture):
         self.assertEqual(r['player_jumps']['scope'],'選択プレイヤー')
         self.assertEqual(r['selected_player']['jump_impulses'],1)
         self.assertIsNone(r['selected_player']['online']);self.assertNotIn('private-uuid',json.dumps(r))
+
+    def test_upstream_player_jump_event_is_counted(self):
+        self.player()
+        details={'hook':'LeviLamina::PlayerJumpEvent','phase':'post_auth_input',
+                 'grounded_and_ascending_checked_by_emitter':True,
+                 'final_world_jump_verified':False}
+        self.jump(cause=JUMP_EVENT_SOURCE, patch=details)
+        report=self.report(metric='jump_impulses')
+        self.assertEqual(report['totals']['jump_impulses'],1)
+        self.assertEqual(report['player_jumps']['count'],1)
+        self.assertEqual(report['player_jumps']['source'],JUMP_EVENT_SOURCE)
+        self.assertEqual(report['player_jumps']['legacy_sources'],[JUMP_SOURCE])
+        self.assertIn('post_auth_input',report['player_jumps']['definition'])
+        self.assertIn('後続リスナーのキャンセル',report['player_jumps']['definition'])
+        self.assertEqual(type_label('minecraft:jump'),'ジャンプ通知（旧加速観測を含む）')
+        for broken in (dict(phase='pre_auth_input'),
+                       dict(grounded_and_ascending_checked_by_emitter=1),
+                       dict(final_world_jump_verified=True)):
+            self.assertEqual(valid_jump_details(json.dumps(details|broken)),0)
 
     def test_invalid_source_flags_quantization_amount_and_absence(self):
         self.player()

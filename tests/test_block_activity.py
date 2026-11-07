@@ -52,7 +52,7 @@ class BlockActivityTests(Fixture):
         self.mined(primary='minecraft:dirt', patch={'before_type': 'minecraft:dirt'})
         self.mined(pid='bob')
         self.placed()
-        self.placed(secondary='off_hand')
+        self.placed(secondary='off_hand',patch={'hand':1})
         # Pre-origin attempt rows must never become a success count.
         with fixture_writer(self.path) as db:
             db.execute('''INSERT INTO events(occurred_at_ms,event_kind,actor_kind,actor_id,cause,amount,primary_type)

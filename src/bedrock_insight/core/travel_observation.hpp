@@ -36,11 +36,11 @@ struct MovementFlags final {
     bool gliding = false;
     bool flying = false;
     bool in_water = false;
+    bool under_water = false;
     bool on_ground = true;
     bool riding = false;
-    // True only when the player is ascending while standing in a vanilla
-    // climbable block (ladder/vine/scaffolding/...). Derived from a block query,
-    // never from a guessed movement-flag bit.
+    // v2 reads the official Actor::onClimbableBlock() predicate for ascending
+    // players. No block-name table or guessed movement flag is used.
     bool climbing = false;
     std::string_view vehicle_type{};
 };
@@ -85,13 +85,8 @@ struct MovementFlags final {
     return true;
 }
 
-[[nodiscard]] inline bool contains(std::string_view haystack, std::string_view needle) noexcept {
-    return haystack.find(needle) != std::string_view::npos;
-}
-
-// Exact vanilla climbable block identifiers (1.26.60). Modded climbables are
-// intentionally NOT guessed; only namespaced vanilla ladders/vines/scaffolding
-// qualify so an unrelated block never turns into climb distance.
+// Legacy name heuristic retained for old fixtures only. It is NOT an engine
+// climbability proof and v2 never uses it to produce movement statistics.
 [[nodiscard]] inline bool is_climbable_block_name(std::string_view name) noexcept {
     static constexpr std::string_view kClimbable[] = {
         "minecraft:ladder",
@@ -118,34 +113,46 @@ struct MovementFlags final {
 [[nodiscard]] inline TravelMode classify_travel(MovementFlags const& f) noexcept {
     if (f.riding) {
         auto const& v = f.vehicle_type;
-        if (contains(v, "_boat") || contains(v, "_raft")) return TravelMode::Boat;
-        if (contains(v, "minecart")) return TravelMode::Minecart;
-        if (contains(v, "strider")) return TravelMode::RideStrider;
-        if (contains(v, "happy_ghast")) return TravelMode::RideHappyGhast;
-        if (contains(v, "nautilus")) return TravelMode::RideNautilus;
-        if (contains(v, "pig")) return TravelMode::RidePig;
-        if (contains(v, "horse") || contains(v, "donkey") || contains(v, "mule") || contains(v, "llama")
-            || contains(v, "camel") || contains(v, "skeleton_horse") || contains(v, "zombie_horse")) {
+        static constexpr std::string_view boats[] = {
+            "minecraft:boat", "minecraft:chest_boat", "minecraft:oak_boat", "minecraft:oak_chest_boat",
+            "minecraft:spruce_boat", "minecraft:spruce_chest_boat", "minecraft:birch_boat", "minecraft:birch_chest_boat",
+            "minecraft:jungle_boat", "minecraft:jungle_chest_boat", "minecraft:acacia_boat", "minecraft:acacia_chest_boat",
+            "minecraft:dark_oak_boat", "minecraft:dark_oak_chest_boat", "minecraft:mangrove_boat", "minecraft:mangrove_chest_boat",
+            "minecraft:cherry_boat", "minecraft:cherry_chest_boat", "minecraft:pale_oak_boat", "minecraft:pale_oak_chest_boat",
+            "minecraft:bamboo_raft", "minecraft:bamboo_chest_raft",
+        };
+        for (auto name : boats) if (v == name) return TravelMode::Boat;
+        if (v == "minecraft:minecart" || v == "minecraft:chest_minecart" || v == "minecraft:hopper_minecart"
+            || v == "minecraft:tnt_minecart" || v == "minecraft:command_block_minecart") return TravelMode::Minecart;
+        if (v == "minecraft:strider") return TravelMode::RideStrider;
+        if (v == "minecraft:happy_ghast") return TravelMode::RideHappyGhast;
+        if (v == "minecraft:nautilus" || v == "minecraft:zombie_nautilus") return TravelMode::RideNautilus;
+        if (v == "minecraft:pig") return TravelMode::RidePig;
+        if (v == "minecraft:horse" || v == "minecraft:donkey" || v == "minecraft:mule" || v == "minecraft:llama"
+            || v == "minecraft:trader_llama" || v == "minecraft:camel" || v == "minecraft:skeleton_horse"
+            || v == "minecraft:zombie_horse") {
             return TravelMode::RideHorse;
         }
         return TravelMode::RideOther;
     }
     if (f.gliding) return TravelMode::Glide;
     if (f.flying) return TravelMode::Fly;
+    if (f.in_water) {
+        if (f.swimming) return TravelMode::Swim;
+        return f.under_water ? TravelMode::WalkUnderWater : TravelMode::WalkOnWater;
+    }
     // Climbing is an explicit ascending-on-climbable state and wins over fall,
     // swim and ground modes. It never overrides a vehicle or elytra flight.
     if (f.climbing) return TravelMode::Climb;
-    if (f.swimming || (f.in_water && !f.on_ground)) return TravelMode::Swim;
     if (!f.on_ground) return TravelMode::Fall;
     if (f.sneaking) return TravelMode::Sneak;
     if (f.sprinting) return TravelMode::Sprint;
     return TravelMode::Walk;
 }
 
-// Converts a per-tick movement delta into integer centimeters for the mode.
-// Horizontal modes use the XZ plane. Fall/climb measure the vertical component.
-// Non-finite or absurd deltas are rejected (0) instead of fabricating distance.
-[[nodiscard]] inline std::int64_t travel_distance_cm(TravelMode mode, double dx, double dy, double dz) noexcept {
+// Primitive distance only. The v2 window separately enforces temporal/identity
+// continuity and floors the SUM, instead of rounding each tick.
+[[nodiscard]] inline double travel_distance_blocks(TravelMode mode, double dx, double dy, double dz) noexcept {
     if (!std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dz)) return 0;
     if (std::fabs(dx) > 1024.0 || std::fabs(dy) > 1024.0 || std::fabs(dz) > 1024.0) return 0;
     double blocks = 0.0;
@@ -158,11 +165,32 @@ struct MovementFlags final {
         blocks = dy;
         if (blocks <= 0.0) return 0;
         break;
+    case TravelMode::RideOther: return 0.0;
+    case TravelMode::Swim:
+    case TravelMode::Fly:
+    case TravelMode::Glide:
+    case TravelMode::Boat:
+    case TravelMode::Minecart:
+    case TravelMode::RidePig:
+    case TravelMode::RideStrider:
+    case TravelMode::RideHorse:
+    case TravelMode::RideNautilus:
+    case TravelMode::RideHappyGhast:
+    case TravelMode::WalkOnWater:
+    case TravelMode::WalkUnderWater:
+        blocks = std::hypot(std::hypot(dx, dz), dy);
+        break;
     default:
         blocks = std::sqrt(dx * dx + dz * dz);
         break;
     }
-    auto cm = static_cast<std::int64_t>(std::llround(blocks * 100.0));
+    return blocks;
+}
+
+// Retained helper for existing callers/fixtures. New native capture uses the
+// fractional window accumulator, not this per-step integer rounding function.
+[[nodiscard]] inline std::int64_t travel_distance_cm(TravelMode mode, double dx, double dy, double dz) noexcept {
+    auto cm = static_cast<std::int64_t>(std::llround(travel_distance_blocks(mode, dx, dy, dz) * 100.0));
     if (cm < 0 || cm > 1000000) return 0;
     return cm;
 }

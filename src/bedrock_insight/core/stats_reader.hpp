@@ -31,6 +31,16 @@ struct PlayerStatSummary final {
     std::size_t limit = 200;
 };
 
+struct StatRankingPage final {
+    std::vector<RankingEntry> rows;
+    std::size_t total_entries = 0;
+    std::size_t offset = 0;
+    std::size_t limit = 0;
+    [[nodiscard]] bool has_more() const noexcept {
+        return offset < total_entries && rows.size() < total_entries - offset;
+    }
+};
+
 // Read-only, per-request SQLite access for the in-game /stats commands and the
 // exported companion API. It never writes, never shares the writer connection,
 // and only executes fixed SQL with bound identifiers.
@@ -66,6 +76,16 @@ public:
         std::size_t offset,
         std::size_t limit,
         std::vector<RankingEntry>& result,
+        std::string& error) const;
+
+    // Rows and total are computed in ONE SQLite statement/read snapshot, even
+    // when offset is beyond the last page. Only positive recorded values count.
+    [[nodiscard]] bool ranking_page(
+        StatsCategory category,
+        std::string_view custom_key,
+        std::size_t offset,
+        std::size_t limit,
+        StatRankingPage& result,
         std::string& error) const;
 
 private:

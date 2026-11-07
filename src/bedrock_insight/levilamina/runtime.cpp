@@ -2,6 +2,9 @@
 
 #include "bedrock_insight/core/remote_api.hpp"
 #ifndef BEDROCKINSIGHT_FAKE_SDK
+#include "bedrock_insight/core/type_labels.hpp"
+#include "bedrock_insight/core/world_tick.hpp"
+#include "mc/world/level/Tick.h"
 #include "bedrock_insight/levilamina/player_damage.hpp"
 #include "bedrock_insight/levilamina/player_block_interaction.hpp"
 #include "bedrock_insight/levilamina/stats_command.hpp"
@@ -109,6 +112,14 @@ bool Runtime::load() noexcept {
         capture_->storage_config.queue_capacity = 8192;
 #ifndef BEDROCKINSIGHT_FAKE_SDK
         set_remote_api_database(capture_->storage_config.database_path);
+        std::string label_error;
+        if(!load_type_labels(mod->getModDir()/"lang"/"ja_JP.json",label_error))
+            mod->getLogger().warn("Type labels unavailable; keep previous catalog or raw IDs");
+        auto const override_path=mod->getConfigDir()/"type_labels.ja_JP.json";
+        std::error_code label_ec;
+        if(std::filesystem::exists(override_path,label_ec) && !load_type_labels(override_path,label_error,true))
+            mod->getLogger().warn("Type label override rejected; keep base catalog");
+        if(label_ec)mod->getLogger().warn("Type label override cannot be inspected; keep base catalog");
 #endif
         // A loaded but never-enabled mod does not receive disable at shutdown.
         // Do not create a worker whose cleanup would depend on DLL detach.
@@ -358,6 +369,84 @@ bool Runtime::enable() noexcept {
         });
     }catch(...){}
     if(!block_interactions){stop_target_capture(targets);stop_breed_capture(breeds);stop_trade_capture(trades);stop_item_transfer_capture(item_transfers);stop_item_use_capture(item_uses);stop_block_capture(blocks);stop_hurt_capture(hurts);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
+    FishToken fish;
+    try {
+        auto const generation=capture_->activation_generation;
+        fish=start_fish_capture([weak=std::weak_ptr<Capture>(capture_),generation](AnalyticsEvent value) noexcept {
+            if(auto capture=weak.lock()) {
+                std::lock_guard lock(capture->mutex);
+                if(!capture->enabled || !capture->storage || capture->activation_generation!=generation)return;
+                try{value.session_id=capture->tick_run_id;static_cast<void>(submit(*capture,std::move(value)));}
+                catch(...){++capture->callback_failures;}
+            }
+        });
+    }catch(...){}
+    if(!fish){stop_block_interaction_capture(block_interactions);stop_target_capture(targets);stop_breed_capture(breeds);stop_trade_capture(trades);stop_item_transfer_capture(item_transfers);stop_item_use_capture(item_uses);stop_block_capture(blocks);stop_hurt_capture(hurts);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
+    RaidEffectToken raid_effects;
+    try {
+        auto const generation=capture_->activation_generation;
+        raid_effects=start_raid_effect_capture([weak=std::weak_ptr<Capture>(capture_),generation](AnalyticsEvent value) noexcept {
+            if(auto capture=weak.lock()) {
+                std::lock_guard lock(capture->mutex);
+                if(!capture->enabled || !capture->storage || capture->activation_generation!=generation)return;
+                try{value.session_id=capture->tick_run_id;static_cast<void>(submit(*capture,std::move(value)));}
+                catch(...){++capture->callback_failures;}
+            }
+        });
+    }catch(...){}
+    if(!raid_effects){stop_fish_capture(fish);stop_block_interaction_capture(block_interactions);stop_target_capture(targets);stop_breed_capture(breeds);stop_trade_capture(trades);stop_item_transfer_capture(item_transfers);stop_item_use_capture(item_uses);stop_block_capture(blocks);stop_hurt_capture(hurts);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
+    AbsorptionToken absorption;
+    try {
+        auto const generation=capture_->activation_generation;
+        absorption=start_absorption_capture([weak=std::weak_ptr<Capture>(capture_),generation](AnalyticsEvent value) noexcept {
+            if(auto capture=weak.lock()) {
+                std::lock_guard lock(capture->mutex);
+                if(!capture->enabled || !capture->storage || capture->activation_generation!=generation)return;
+                try{value.session_id=capture->tick_run_id;static_cast<void>(submit(*capture,std::move(value)));}
+                catch(...){++capture->callback_failures;}
+            }
+        });
+    }catch(...){}
+    if(!absorption){stop_raid_effect_capture(raid_effects);stop_fish_capture(fish);stop_block_interaction_capture(block_interactions);stop_target_capture(targets);stop_breed_capture(breeds);stop_trade_capture(trades);stop_item_transfer_capture(item_transfers);stop_item_use_capture(item_uses);stop_block_capture(blocks);stop_hurt_capture(hurts);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
+    RestToken rest;
+    try {
+        auto const generation=capture_->activation_generation;
+        rest=start_rest_capture([weak=std::weak_ptr<Capture>(capture_),generation](AnalyticsEvent value) noexcept {
+            if(auto capture=weak.lock()) {
+                std::lock_guard lock(capture->mutex);
+                if(!capture->enabled || !capture->storage || capture->activation_generation!=generation)return;
+                try{value.session_id=capture->tick_run_id;static_cast<void>(submit(*capture,std::move(value)));}
+                catch(...){++capture->callback_failures;}
+            }
+        });
+    }catch(...){}
+    if(!rest){stop_absorption_capture(absorption);stop_raid_effect_capture(raid_effects);stop_fish_capture(fish);stop_block_interaction_capture(block_interactions);stop_target_capture(targets);stop_breed_capture(breeds);stop_trade_capture(trades);stop_item_transfer_capture(item_transfers);stop_item_use_capture(item_uses);stop_block_capture(blocks);stop_hurt_capture(hurts);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
+    ResistanceToken resistance;
+    try {
+        auto const generation=capture_->activation_generation;
+        resistance=start_resistance_capture([weak=std::weak_ptr<Capture>(capture_),generation](AnalyticsEvent value) noexcept {
+            if(auto capture=weak.lock()) {
+                std::lock_guard lock(capture->mutex);
+                if(!capture->enabled || !capture->storage || capture->activation_generation!=generation)return;
+                try{value.session_id=capture->tick_run_id;static_cast<void>(submit(*capture,std::move(value)));}
+                catch(...){++capture->callback_failures;}
+            }
+        });
+    }catch(...){}
+    if(!resistance){stop_rest_capture(rest);stop_absorption_capture(absorption);stop_raid_effect_capture(raid_effects);stop_fish_capture(fish);stop_block_interaction_capture(block_interactions);stop_target_capture(targets);stop_breed_capture(breeds);stop_trade_capture(trades);stop_item_transfer_capture(item_transfers);stop_item_use_capture(item_uses);stop_block_capture(blocks);stop_hurt_capture(hurts);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
+    ShieldEvidenceToken shield_evidence;
+    try {
+        auto const generation=capture_->activation_generation;
+        shield_evidence=start_shield_evidence([weak=std::weak_ptr<Capture>(capture_),generation](AnalyticsEvent value) noexcept {
+            if(auto capture=weak.lock()) {
+                std::lock_guard lock(capture->mutex);
+                if(!capture->enabled || !capture->storage || capture->activation_generation!=generation)return;
+                try{value.session_id=capture->tick_run_id;static_cast<void>(submit(*capture,std::move(value)));}
+                catch(...){++capture->callback_failures;}
+            }
+        });
+    }catch(...){}
+    if(!shield_evidence){stop_resistance_capture(resistance);stop_rest_capture(rest);stop_absorption_capture(absorption);stop_raid_effect_capture(raid_effects);stop_fish_capture(fish);stop_block_interaction_capture(block_interactions);stop_target_capture(targets);stop_breed_capture(breeds);stop_trade_capture(trades);stop_item_transfer_capture(item_transfers);stop_item_use_capture(item_uses);stop_block_capture(blocks);stop_hurt_capture(hurts);stop_kill_capture(kills);stop_jump_capture(jumps);stop_pickup_capture(pickups);stop_death_capture(deaths);stop_drop_capture(drops);stop_busy_ticks(busy);stop_storage();return false;}
 #endif
     bool admitted = false;
     {
@@ -376,6 +465,12 @@ bool Runtime::enable() noexcept {
         capture_->item_transfers=std::move(item_transfers);
         capture_->trades=std::move(trades);
         capture_->breeds=std::move(breeds);
+        capture_->fish=std::move(fish);
+        capture_->raid_effects=std::move(raid_effects);
+        capture_->absorption=std::move(absorption);
+        capture_->rest=std::move(rest);
+        capture_->resistance=std::move(resistance);
+        capture_->shield_evidence=std::move(shield_evidence);
         capture_->targets=std::move(targets);
         capture_->block_interactions=std::move(block_interactions);
 #endif
@@ -397,6 +492,9 @@ bool Runtime::enable() noexcept {
     try {
         if (auto mod = ll::mod::NativeMod::current()) {
             mod->getLogger().info("BedrockInsight enabled: join/leave, block attempts, busy timer v1, death/use notifications; drop, dead-flag/mode, take delta, jump impulse, direct-attack death, hurt-slot and proven mined/placed block observations v1; block-use/cake/cauldron/flower-pot/noteblock interaction results v1; item use/durability-use, created-output craft/trade/enchant and furnace output v1");
+#ifndef BEDROCKINSIGHT_FAKE_SDK
+            if(shield_evidence_enabled(capture_->shield_evidence))mod->getLogger().warn("Shield raw evidence opt-in active; NOT a shield statistic or success proof");
+#endif
         }
     } catch (...) {}
     return true;
@@ -437,6 +535,12 @@ bool Runtime::stop_storage() noexcept {
     ItemTransferToken item_transfers;
     TradeToken trades;
     BreedToken breeds;
+    FishToken fish;
+    RaidEffectToken raid_effects;
+    AbsorptionToken absorption;
+    RestToken rest;
+    ResistanceToken resistance;
+    ShieldEvidenceToken shield_evidence;
     TargetToken targets;
     BlockInteractionToken block_interactions;
 #endif
@@ -463,6 +567,12 @@ bool Runtime::stop_storage() noexcept {
         item_transfers=std::move(capture_->item_transfers);
         trades=std::move(capture_->trades);
         breeds=std::move(capture_->breeds);
+        fish=std::move(capture_->fish);
+        raid_effects=std::move(capture_->raid_effects);
+        absorption=std::move(capture_->absorption);
+        rest=std::move(capture_->rest);
+        resistance=std::move(capture_->resistance);
+        shield_evidence=std::move(capture_->shield_evidence);
         targets=std::move(capture_->targets);
         block_interactions=std::move(capture_->block_interactions);
         // Flush pending travel distance while capture_->storage is still alive.
@@ -527,6 +637,12 @@ bool Runtime::stop_storage() noexcept {
     stop_target_capture(targets);
     stop_block_interaction_capture(block_interactions);
     stop_breed_capture(breeds);
+    stop_fish_capture(fish);
+    stop_raid_effect_capture(raid_effects);
+    stop_absorption_capture(absorption);
+    stop_rest_capture(rest);
+    stop_resistance_capture(resistance);
+    stop_shield_evidence(shield_evidence);
     stop_trade_capture(trades);
     stop_item_transfer_capture(item_transfers);
     stop_item_use_capture(item_uses);
@@ -616,6 +732,7 @@ void Runtime::on_join(Capture& capture, ll::event::PlayerJoinEvent& event) {
         if(capture.travels)track_travel(*capture.travels,event.self(),value.occurred_at_ms,
             {&capture,&Runtime::travel_emit});
         track_player(capture,event.self());
+        forget_rest(capture.rest,value.actor.id);
 #endif
         value.session_id = "session-" + value.actor.id + "-" + std::to_string(value.occurred_at_ms)
             + "-" + std::to_string(capture.next_session_nonce++);
@@ -701,6 +818,16 @@ void Runtime::on_tick(Capture& capture, ll::event::ServerLevelTickEvent& event) 
         static_cast<void>(submit(capture, tick_marker(capture.tick_run_id, "ll26.60.interval.end.v1")));
     }
     if (!window) return;
+    // Public pinned virtual API, called through its C++ declaration (never a
+    // guessed slot or the private $ implementation). One WORLD snapshot per
+    // interval window; no per-player replication or per-tick database writes.
+#ifndef BEDROCKINSIGHT_FAKE_SDK
+    try {
+        auto snapshot = world_tick_snapshot(event.level().getCurrentServerTick().tickID,
+            now_ms(), capture.tick_run_id);
+        if (snapshot) static_cast<void>(submit(capture, std::move(*snapshot)));
+    } catch (...) { ++capture.callback_failures; }
+#endif
     // Official 26.60 Level MCAPI, not a guessed field offset/virtual slot.
     // One count read and one queue submission per >=5s, never SQLite per tick.
     auto const online = event.level().$getActivePlayerCount();
@@ -773,6 +900,7 @@ void Runtime::track_player(Capture& capture, Player& player) {
 }
 
 void Runtime::forget_player_state(Capture& capture, std::string const& player_id) {
+    forget_rest(capture.rest,player_id);
     auto sneak = capture.sneak_started_us.find(player_id);
     if (sneak != capture.sneak_started_us.end()) {
         try {

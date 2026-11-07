@@ -117,7 +117,9 @@ function Remove-BdsIntervalRuntimeDelayImport([string[]]$Inspection) {
         '  ImportNameTable: 0x[0-9A-Fa-f]+\n  BoundDelayImportTable: 0x0\n' +
         '  UnloadDelayImportTable: 0x0\n' +
         '(?:  Import \{\n    Symbol: (?<api>\S+) \(0\)\n' +
-        '    Address: 0x[0-9A-Fa-f]+\n  \}\n){1,48}\}$'
+        # Previous reviewed PE:52 entries, plus the pinned HEALTH accessor MCAPI.
+        # Keep the bounded shape and the per-symbol allow-list below.
+        '    Address: 0x[0-9A-Fa-f]+\n  \}\n){1,53}\}$'
     $match=[regex]::Match($text,$pattern)
     if (-not $match.Success) { throw 'Unreviewed interval runtime delay import shape/symbol' }
     $allowed=@('?$getActivePlayerCount@Level@@QEBAHXZ','?$tick@Level@@QEAAXXZ',
@@ -126,6 +128,9 @@ function Remove-BdsIntervalRuntimeDelayImport([string[]]$Inspection) {
         '??0StackResultStorageEntity@@QEAA@AEBVWeakStorageEntity@@@Z',
         '?take@Player@@QEAA_NAEAVActor@@HH@Z',
         '?jumpFromGround@Mob@@QEAAXXZ','?getVehicle@Actor@@QEBAPEAV1@XZ',
+        # Pinned26.60 Actor.h: MCAPI bool onClimbableBlock() const.
+        # Only this exact accessor is admitted; no movement flag/offset guessing.
+        '?onClimbableBlock@Actor@@QEBA_NXZ',
         '?$die@Mob@@QEAAXAEBVActorDamageSource@@@Z',
         '?$useItem@GameMode@@QEAA_NAEAVItemStack@@W4HandSlot@@@Z',
         '?hurtAndBreak@ItemStackBase@@QEAA_NHPEAVActor@@@Z',
@@ -135,6 +140,26 @@ function Remove-BdsIntervalRuntimeDelayImport([string[]]$Inspection) {
         '?getDimensionBlockSource@Actor@@QEBAAEAVBlockSource@@XZ',
         '?isFlying@Player@@QEBA_NXZ',
         '?isInWater@Actor@@QEBA_NXZ',
+        # Pinned26.60 Player.h:979 / BucketItem.h $_useOn are MCAPI.
+        # Exact compiler-emitted names from the independent fish adapter probe.
+        '?interact@Player@@QEAA?AVInteractionResult@@AEAVActor@@AEBVVec3@@W4HandSlot@@@Z',
+        '?$_useOn@BucketItem@@QEBA?AVInteractionResult@@AEAVItemStack@@AEAVActor@@VBlockPos@@EW4HandSlot@@AEBVVec3@@@Z',
+        # Pinned Actor.h MCAPI; exact compiler-emitted effect probe names.
+        # Observes state only; does not attest raid attribution or victory.
+        '?addEffect@Actor@@QEAAXAEBVMobEffectInstance@@@Z',
+        '?getEffect@Actor@@QEBAPEBVMobEffectInstance@@I@Z',
+        # Exact names from absorption adapter compile; pinned MCAPI declarations.
+        # Neither returned mDamageAmount nor the notification is treated as HP loss.
+        '?$_hurt@Mob@@QEAA?AVActorHurtResult@@AEBVActorDamageSource@@MAEBUHurtParameters@@@Z',
+        '?$_hurt@Player@@QEAA?AVActorHurtResult@@AEBVActorDamageSource@@MAEBUHurtParameters@@@Z',
+        '?ABSORPTION@SharedAttributes@@SAAEBVAttribute@@XZ',
+        # Exact emitted name from public SharedAttributes.h HEALTH() probe.
+        '?HEALTH@SharedAttributes@@SAAEBVAttribute@@XZ',
+        '?getAttribute@Actor@@QEBA?AVAttributeInstanceConstRef@@AEBVAttribute@@@Z',
+        # Exact rest-adapter compiler import; ServerPlayer.h MCAPI, not Player's MCNAPI.
+        '?$normalTick@ServerPlayer@@QEAAXXZ',
+        # Compiler-emitted const stage signature; Mob.h public MCAPI.
+        '?$getDamageAfterEnchantReduction@Mob@@QEBAMAEBVActorDamageSource@@M@Z',
         '?postRequest@CraftHandlerBase@@QEAAX_N@Z',
         # Actual compiler/PE names; pinned26.60 MCAPI declarations reviewed.
         # This does NOT establish successful trading or offspring attribution.
@@ -190,9 +215,14 @@ function Remove-BdsIntervalRuntimeDelayImport([string[]]$Inspection) {
         '??0StackResultStorageEntity@@QEAA@AEBVWeakStorageEntity@@@Z' -cnotin $names) {
         throw 'Pickup inventory observation requires reviewed weak-reference API'
     }
-    if (('?jumpFromGround@Mob@@QEAAXXZ' -cin $names) -ne
-        ('?getVehicle@Actor@@QEBAPEAV1@XZ' -cin $names)) {
-        throw 'Incomplete reviewed jump/vehicle API pair'
+    # Legacy Mob::jumpFromGround impulse capture required getVehicle to reject
+    # mounted jumps. The upstream-compatible 26.60 PlayerJumpEvent listener no
+    # longer imports jumpFromGround, while travel tracking still uses getVehicle.
+    # Preserve the one-way dependency for legacy hooks; do not require the
+    # reverse (vehicle tracking is an independent, reviewed feature).
+    if ('?jumpFromGround@Mob@@QEAAXXZ' -cin $names -and
+        '?getVehicle@Actor@@QEBAPEAV1@XZ' -cnotin $names) {
+        throw 'Legacy jump impulse hook requires reviewed vehicle accessor'
     }
     if ('?jumpFromGround@Mob@@QEAAXXZ' -cin $names -and
         '??0StackResultStorageEntity@@QEAA@AEBVWeakStorageEntity@@@Z' -cnotin $names) {

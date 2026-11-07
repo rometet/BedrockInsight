@@ -16,6 +16,8 @@ from urllib.parse import parse_qs, urlsplit
 
 from .analytics import Analytics
 from .stats_view import report as stats_report
+from .stats_catalog import BASE_TYPE_LABELS
+from .type_labels import load_type_labels
 
 ASSETS = Path(__file__).parent / "web"
 
@@ -24,7 +26,10 @@ class CompanionServer(HTTPServer):
     allow_reuse_address = False
     request_queue_size = 8
 
-    def __init__(self, database, port=18767):
+    def __init__(self, database, port=18767, type_labels_path=None):
+        # Load before binding; an invalid optional file cannot leave a listener.
+        self.type_labels=(load_type_labels(type_labels_path,BASE_TYPE_LABELS)
+                          if type_labels_path is not None else BASE_TYPE_LABELS)
         self.viewer_token = secrets.token_urlsafe(32)
         self.token_hash = hashlib.sha256(self.viewer_token.encode("ascii")).digest()
         self.token_deadline = time.monotonic() + 8 * 3600
@@ -152,7 +157,7 @@ class Handler(BaseHTTPRequestHandler):
                     if not args[key].isascii() or not args[key].isdecimal() or len(args[key]) > 5:
                         raise ValueError("ページは範囲内の整数です")
                     args[key] = int(args[key])
-            report = stats_report(self.server.analytics, **args) if stats else self.server.analytics.report(**args)
+            report = stats_report(self.server.analytics, type_labels=self.server.type_labels, **args) if stats else self.server.analytics.report(**args)
         except (ValueError, OverflowError) as error:
             return self.reply(400, {"error": str(error)})
         except LookupError:
@@ -171,11 +176,15 @@ def main():
     parser = argparse.ArgumentParser(description="BedrockInsight localhost-only read-only companion (NOT in-game HTTP)")
     parser.add_argument("--database", required=True, type=Path)
     parser.add_argument("--port", default=18767, type=int)
+    parser.add_argument("--type-labels", type=Path, help="Optional bounded Japanese type-label override JSON (read once before bind)")
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535:
         parser.error("port must be 1024..65535; bind address is always 127.0.0.1")
     # Validate data availability before starting a listener; no default token/config file.
-    server = CompanionServer(args.database, args.port)
+    try:
+        server = CompanionServer(args.database, args.port, args.type_labels)
+    except (OSError,ValueError) as error:
+        parser.error(str(error))
     try:
         server.analytics.report(period="all")
         print(f"BedrockInsight COMPANION (read-only): http://127.0.0.1:{server.server_port}/", flush=True)

@@ -42,7 +42,7 @@ setImmediate(()=>{
       pickup_inventory_items:['拾得処理中・主所持品の増加',count(p.pickup_inventory_items,'個')],
       pickup_delta_actions:['拾得処理中・所持数増加の観測',count(p.pickup_delta_actions)],
       confirmed_deaths:['死亡フラグ成立（処理後）',count(p.confirmed_deaths)],
-      jump_impulses:['ジャンプ処理の上向き加速観測',count(p.jump_impulses)],
+      jump_impulses:['ジャンプ通知（旧加速観測を含む）',count(p.jump_impulses)],
       use_return_actions:['使用の成功観測（消費系/耐久消費）',count(p.use_return_actions)],
       use_inventory_loss:['使用の種類別記録数',count(p.use_inventory_loss)],
       hurt_slot_losses:['耐久処理true応答・主所持品スロットの1個消失',count(p.hurt_slot_losses)],

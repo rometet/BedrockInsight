@@ -7,6 +7,9 @@
 #include "bedrock_insight/core/remote_api.hpp"
 #include "bedrock_insight/core/stats_catalog.hpp"
 #include "bedrock_insight/core/stats_reader.hpp"
+#include "bedrock_insight/core/type_labels.hpp"
+#include "bedrock_insight/core/block_record.hpp"
+#include "bedrock_insight/core/broken_record.hpp"
 
 #include <cstring>
 #include <memory>
@@ -78,6 +81,14 @@ std::string summary_json(PlayerStatSummary const& summary, int page, int limit) 
     append_json_string(out, category_info(summary.category).id);
     out += ",\"category_label\":";
     append_json_string(out, category_info(summary.category).label);
+    if(summary.category==StatsCategory::Mined) {
+        out+=",\"scope\":";append_json_string(out,kBlockObservationScope);
+        out+=",\"source_contracts\":[\"ll26.60.gamemode_destroy_block.v2\",\"ll26.60.gamemode_destroy_block.v1\"],\"final_world_commit_verified\":false";
+    }
+    if(summary.category==StatsCategory::Broken) {
+        out+=",\"scope\":";append_json_string(out,kBrokenObservationScope);
+        out+=",\"source_contracts\":[\"ll26.60.durability_item_destroyed.v2\",\"ll26.60.durability_item_destroyed.v1\"],\"final_world_commit_verified\":false";
+    }
     out += ",\"total\":" + (summary.total_available?std::to_string(summary.total):std::string("null"))
         + ",\"time_basis\":\"closed_session_lower_bound_50ms_ticks\",\"page\":" + std::to_string(page)
         + ",\"limit\":" + std::to_string(limit) + ",\"total_entries\":"+std::to_string(summary.row_count)
@@ -90,7 +101,7 @@ std::string summary_json(PlayerStatSummary const& summary, int page, int limit) 
         out += "{\"key\":";
         append_json_string(out, row.key);
         out += ",\"label\":";
-        append_json_string(out, custom_key_label(row.key));
+        append_json_string(out, stat_display_label(row.key));
         out += ",\"value\":" + std::to_string(row.value) + '}';
     }
     out += "]}";
@@ -99,7 +110,7 @@ std::string summary_json(PlayerStatSummary const& summary, int page, int limit) 
 
 int run_player(char const* player, char const* category, int page, int limit, char* buffer, int capacity) {
     if (player == nullptr || category == nullptr) return -1;
-    if (page < 0 || page > 1000 || limit < 1 || limit > 100) return -2;
+    if (page < 0 || page > BI_STATS_MAX_PAGE || limit < 1 || limit > BI_STATS_MAX_LIMIT) return -2;
     auto parsed = category_from_id(category);
     if (parsed == StatsCategory::Unknown) return -4;
     std::string error;
@@ -120,7 +131,7 @@ int run_player(char const* player, char const* category, int page, int limit, ch
 
 int run_rank(char const* category, int page, int limit, char* buffer, int capacity) {
     if (category == nullptr) return -1;
-    if (page < 0 || page > 1000 || limit < 1 || limit > 100) return -2;
+    if (page < 0 || page > BI_STATS_MAX_PAGE || limit < 1 || limit > BI_STATS_MAX_LIMIT) return -2;
     std::string_view input{category};
     std::string_view custom_key;
     auto parsed = StatsCategory::Unknown;
@@ -136,9 +147,9 @@ int run_rank(char const* category, int page, int limit, char* buffer, int capaci
     std::string error;
     auto reader = open_reader(error);
     if (!reader) return respond(error_json(error), buffer, capacity);
-    std::vector<RankingEntry> rows;
-    if (!reader->ranking(parsed, custom_key, static_cast<std::size_t>(page) * static_cast<std::size_t>(limit),
-            static_cast<std::size_t>(limit), rows, error)) {
+    StatRankingPage ranking;
+    if (!reader->ranking_page(parsed, custom_key, static_cast<std::size_t>(page) * static_cast<std::size_t>(limit),
+            static_cast<std::size_t>(limit), ranking, error)) {
         return respond(error_json(error), buffer, capacity);
     }
     std::string out = "{\"ok\":true,\"category\":";
@@ -149,10 +160,21 @@ int run_rank(char const* category, int page, int limit, char* buffer, int capaci
     }
     out += ",\"category_label\":";
     append_json_string(out, category_info(parsed).label);
-    out += ",\"page\":" + std::to_string(page) + ",\"limit\":" + std::to_string(limit) + ",\"entries\":[";
+    if(parsed==StatsCategory::Mined) {
+        out+=",\"scope\":";append_json_string(out,kBlockObservationScope);
+        out+=",\"source_contracts\":[\"ll26.60.gamemode_destroy_block.v2\",\"ll26.60.gamemode_destroy_block.v1\"],\"final_world_commit_verified\":false";
+    }
+    if(parsed==StatsCategory::Broken) {
+        out+=",\"scope\":";append_json_string(out,kBrokenObservationScope);
+        out+=",\"source_contracts\":[\"ll26.60.durability_item_destroyed.v2\",\"ll26.60.durability_item_destroyed.v1\"],\"final_world_commit_verified\":false";
+    }
+    out += ",\"page\":" + std::to_string(page) + ",\"limit\":" + std::to_string(limit)
+        + ",\"total_entries\":" + std::to_string(ranking.total_entries)
+        + ",\"has_more\":" + (ranking.has_more()?"true":"false")
+        + ",\"collection_complete\":false,\"entries\":[";
     bool first = true;
     int rank = page * limit + 1;
-    for (auto const& row : rows) {
+    for (auto const& row : ranking.rows) {
         if (!first) out += ',';
         first = false;
         out += "{\"rank\":" + std::to_string(rank++) + ",\"name\":";
@@ -181,25 +203,25 @@ template<class F> int api_boundary(char* buffer,int capacity,F&& run) noexcept {
 
 extern "C" {
 // getPlayerStats(player, category, buffer, capacity)
-__declspec(dllexport) int getPlayerStats(
+__declspec(dllexport) int BI_STATS_CALL getPlayerStats(
     char const* player, char const* category, char* buffer, int capacity) noexcept {
     return api_boundary(buffer,capacity,[&]{return bedrock_insight::run_player(player, category, 0, 100, buffer, capacity);});
 }
 
 // getRankStats(category, page, limit, buffer, capacity)
-__declspec(dllexport) int getRankStats(
+__declspec(dllexport) int BI_STATS_CALL getRankStats(
     char const* category, int page, int limit, char* buffer, int capacity) noexcept {
     return api_boundary(buffer,capacity,[&]{return bedrock_insight::run_rank(category, page, limit, buffer, capacity);});
 }
 
 // getPlayerStatsPage(player, category, page, limit, buffer, capacity)
-__declspec(dllexport) int getPlayerStatsPage(
+__declspec(dllexport) int BI_STATS_CALL getPlayerStatsPage(
     char const* player, char const* category, int page, int limit, char* buffer, int capacity) noexcept {
     return api_boundary(buffer,capacity,[&]{return bedrock_insight::run_player(player, category, page, limit, buffer, capacity);});
 }
 
 // getRankStatsPage(category, page, limit, buffer, capacity)
-__declspec(dllexport) int getRankStatsPage(
+__declspec(dllexport) int BI_STATS_CALL getRankStatsPage(
     char const* category, int page, int limit, char* buffer, int capacity) noexcept {
     return api_boundary(buffer,capacity,[&]{return bedrock_insight::run_rank(category, page, limit, buffer, capacity);});
 }

@@ -1,57 +1,39 @@
 #include "bedrock_insight/levilamina/player_travel.hpp"
-#include "bedrock_insight/core/travel_observation.hpp"
+#include "bedrock_insight/core/travel_event.hpp"
 #include "mc/deps/core/math/Vec3.h"
 #include "mc/deps/ecs/WeakEntityRef.h"
 #include "mc/deps/shared_types/v1_26_20/block/MaterialType.h"
 #include "mc/world/actor/Actor.h"
 #include "mc/world/actor/player/Player.h"
-#include "mc/world/level/BlockPos.h"
 #include "mc/world/level/Level.h"
-#include "mc/world/level/block/Block.h"
-#include <map>
+#include <chrono>
 #include <unordered_map>
 
 namespace bedrock_insight::levilamina {
 namespace {
 constexpr std::size_t kCapacity = 256;
-constexpr std::int64_t kFlushMs = 5000;
 
 struct Entry final {
     WeakEntityRef weak;
     ::Actor const* identity = nullptr;
     Level const* level = nullptr;
     Actor actor;
-    Vec3 last;
-    int dimension = 0;
-    std::map<std::string, std::int64_t, std::less<>> pending;
-    std::int64_t last_flush = 0;
+    TravelWindow window;
 };
 
-void emit_entry(Entry& entry, std::int64_t utc_ms, TravelEventSink sink) {
+void emit_entry(Entry& entry, TravelEventSink sink) {
+    auto const pending = entry.window.drain();
     if (sink.emit == nullptr) {
-        entry.pending.clear();
         return;
     }
-    for (auto const& [mode, cm] : entry.pending) {
+    for (std::size_t index = 0; index < pending.size(); ++index) {
+        auto const& bucket = pending[index];
+        auto const cm = bucket.whole_cm();
         if (cm <= 0) continue;
-        AnalyticsEvent value;
-        value.kind = EventKind::PlayerTravelDistance;
-        value.actor = entry.actor;
-        value.primary_type = mode;
-        value.amount = cm;
-        value.occurred_at_ms = utc_ms;
-        value.cause = "ll26.60.poll_position_delta.v1";
-        value.details_json = "{\"adapter\":\"ServerLevelTickEvent\",\"phase\":\"polled_position_delta\","
-            "\"mode\":\"" + mode + "\",\"distance_cm\":" + std::to_string(cm)
-            + ",\"flush_interval_ms\":" + std::to_string(kFlushMs) + "}";
-        try { sink.emit(sink.context, std::move(value)); } catch (...) {}
+        // Last observed movement, NOT an old flush time or the later shutdown.
+        auto value = travel_window_event(entry.actor, static_cast<TravelMode>(index), bucket);
+        if (value) try { sink.emit(sink.context, std::move(*value)); } catch (...) {}
     }
-    entry.pending.clear();
-}
-
-void flush(Entry& entry, std::int64_t utc_ms, TravelEventSink sink) {
-    emit_entry(entry, utc_ms, sink);
-    entry.last_flush = utc_ms;
 }
 
 std::string player_id(Player const& player) {
@@ -68,8 +50,9 @@ public:
 
 TravelToken make_travel_tracker() { return std::make_shared<TravelTracker>(); }
 
-void track_travel(TravelTracker& tracker, Player& player, std::int64_t utc_ms, TravelEventSink) {
+void track_travel(TravelTracker& tracker, Player& player, std::int64_t utc_ms, TravelEventSink sink) {
     try {
+        if (utc_ms < 0) return;
         auto id = player_id(player);
         if (id.empty()) return;
         auto it = tracker.entries.find(id);
@@ -78,21 +61,20 @@ void track_travel(TravelTracker& tracker, Player& player, std::int64_t utc_ms, T
             auto name = player.getRealName();
             if (name.size() > 256) name.resize(256);
             Entry entry{player.getEntityContext().getWeakRef(), static_cast<::Actor*>(&player),
-                &player.getLevel(), {ActorKind::Player, id, name}, player.getPosition(),
-                static_cast<int>(player.getDimensionId()), {}, utc_ms};
+                &player.getLevel(), {ActorKind::Player, id, name}, {}};
             tracker.entries.emplace(std::move(id), std::move(entry));
             return;
         }
         // A different entity with the same UUID must not inherit a stale delta.
         if (it->second.identity != static_cast<::Actor*>(&player)) {
+            emit_entry(it->second, sink);
             it->second.identity = static_cast<::Actor*>(&player);
             it->second.weak = player.getEntityContext().getWeakRef();
             it->second.level = &player.getLevel();
-            it->second.dimension = static_cast<int>(player.getDimensionId());
-            it->second.pending.clear();
+            it->second.window = {};
         }
-        it->second.last = player.getPosition();
-        it->second.dimension = static_cast<int>(player.getDimensionId());
+        // Re-observation never manufactures a position delta or carries an old
+        // entity's baseline into a new one with the same account UUID.
         it->second.actor.display_name = player.getRealName();
         if (it->second.actor.display_name.size() > 256) it->second.actor.display_name.resize(256);
     } catch (...) {}
@@ -101,44 +83,32 @@ void track_travel(TravelTracker& tracker, Player& player, std::int64_t utc_ms, T
 void forget_travel(TravelTracker& tracker, std::string const& id, std::int64_t utc_ms, TravelEventSink sink) {
     auto it = tracker.entries.find(id);
     if (it == tracker.entries.end()) return;
-    // Use the disconnect time, not a possibly 5s-stale last_flush timestamp, so
-    // the final coalesced distance lands in the correct daily/period bucket.
-    flush(it->second, utc_ms >= 0 ? utc_ms : it->second.last_flush, sink);
+    (void)utc_ms; // attribution uses each bucket's last actual observation.
+    emit_entry(it->second, sink);
     tracker.entries.erase(it);
 }
 
 void poll_travel(TravelTracker& tracker, Level& level, std::int64_t utc_ms, TravelEventSink sink) {
     if (utc_ms < 0) return;
+    auto const monotonic = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
     for (auto it = tracker.entries.begin(); it != tracker.entries.end();) {
         auto& entry = it->second;
         if (entry.level != &level) { ++it; continue; }
         auto actor = entry.weak.tryUnwrap<Player>();
         if (!actor || actor.as_ptr() != entry.identity) {
             // Disconnected/removed actors must not keep collected distance.
-            flush(entry, utc_ms, sink);
+            emit_entry(entry, sink);
             it = tracker.entries.erase(it);
             continue;
         }
         try {
             auto const& pos = actor->getPosition();
-            int const dimension = static_cast<int>(actor->getDimensionId());
-            if (dimension != entry.dimension) {
-                // A portal/respawn baseline is not travel distance.
-                entry.dimension = dimension;
-                entry.last = pos;
-                ++it;
-                continue;
-            }
-            auto const dx = pos.x - entry.last.x;
-            auto const dy = pos.y - entry.last.y;
-            auto const dz = pos.z - entry.last.z;
-            if (!travel_step_is_continuous(dx, dy, dz)) {
-                // Teleport/pearl-scale discontinuity: reset the baseline and do
-                // not fabricate the jump as walked distance.
-                entry.last = pos;
-                ++it;
-                continue;
-            }
+            TravelFrame frame;
+            frame.x = pos.x; frame.y = pos.y; frame.z = pos.z;
+            frame.utc_ms = utc_ms; frame.steady_us = monotonic;
+            frame.dimension = static_cast<int>(actor->getDimensionId());
+            frame.alive = !actor->isDead(); // pinned LL accessor, no guessed slot.
             MovementFlags flags;
             flags.sprinting = actor->isSprinting();
             flags.sneaking = actor->isSneaking();
@@ -149,46 +119,31 @@ void poll_travel(TravelTracker& tracker, Level& level, std::int64_t utc_ms, Trav
             flags.on_ground = actor->isOnGround();
             // Water-surface vs underwater is a distinct vanilla split. Only a
             // player actually in water contributes either key.
-            bool const under_water = flags.in_water
+            flags.under_water = flags.in_water
                 && actor->isUnderLiquid(::SharedTypes::v1_26_20::MaterialType::Water);
             ::Actor* vehicle = actor->getVehicle();
             if (vehicle != nullptr) {
                 flags.riding = true;
+                frame.mounted = true;
+                frame.vehicle_id = vehicle->mLegacyUniqueID->rawID;
                 auto const& name = vehicle->getTypeName();
                 if (valid_vehicle_type(name)) flags.vehicle_type = name;
             }
-            // Climbing requires an upward step out of a vanilla climbable block.
-            // A block query is used instead of an unexported movement flag; it
-            // only runs for ascending, non-flying, non-riding players.
-            if (!flags.riding && !flags.gliding && !flags.flying && dy > 0.0) {
-                try {
-                    auto const feet = actor->getFeetBlockPos();
-                    auto const& block = actor->getDimensionBlockSource().getBlock(feet);
-                    flags.climbing = is_climbable_block_name(block.getTypeName());
-                } catch (...) {}
+            // Pinned26.60 Actor.h declares this const MCAPI. Use the engine's
+            // own predicate, not block-name heuristics or a guessed flag bit.
+            if (!flags.riding && !flags.gliding && !flags.flying && !flags.in_water && entry.window.ascending(frame.y)) {
+                flags.climbing = actor->onClimbableBlock();
             }
-            auto const mode = classify_travel(flags);
-            auto const cm = travel_distance_cm(mode, dx, dy, dz);
-            entry.last = pos;
-            if (cm > 0) {
-                auto& total = entry.pending[std::string(travel_mode_name(mode))];
-                if (total <= 100000000) total += cm;
-            }
-            // Additive water split: a swimming/underwater player also accrues
-            // this distance under the correct surface/underwater key.
-            if (flags.in_water) {
-                auto const water_mode = under_water ? TravelMode::WalkUnderWater : TravelMode::WalkOnWater;
-                auto const water_cm = travel_distance_cm(water_mode, dx, dy, dz);
-                if (water_cm > 0) {
-                    auto& total = entry.pending[std::string(travel_mode_name(water_mode))];
-                    if (total <= 100000000) total += water_cm;
-                }
-            }
-            if (utc_ms - entry.last_flush >= kFlushMs && !entry.pending.empty()) {
-                flush(entry, utc_ms, sink);
+            frame.mode = classify_travel(flags);
+            if (entry.window.boundary(frame)) {
+                emit_entry(entry, sink);
+                entry.window.reset(frame);
+            } else {
+                entry.window.observe(frame);
+                if (entry.window.due(monotonic)) emit_entry(entry, sink);
             }
         } catch (...) {
-            flush(entry, utc_ms, sink);
+            emit_entry(entry, sink);
             it = tracker.entries.erase(it);
             continue;
         }
@@ -199,7 +154,7 @@ void poll_travel(TravelTracker& tracker, Level& level, std::int64_t utc_ms, Trav
 void finish_travel(TravelTracker& tracker, TravelEventSink sink) {
     for (auto& [id, entry] : tracker.entries) {
         (void)id;
-        flush(entry, entry.last_flush, sink);
+        emit_entry(entry, sink);
     }
     tracker.entries.clear();
 }

@@ -2,6 +2,7 @@
 // native mod would after GetProcAddress. Throwaway DB only.
 #include "bedrock_insight/core/remote_api.hpp"
 #include "killed_by_fixture.hpp"
+#include "block_record_fixture.hpp"
 
 #include <sqlite3.h>
 
@@ -40,12 +41,11 @@ int main() {
         "duration_ms INTEGER);"
         "INSERT INTO players VALUES('uuid64:1:2','Alice',0,1);"
         "INSERT INTO players VALUES('uuid64:3:4','Bob',0,1);"
-        "INSERT INTO events VALUES(1,1,'block_mined_result','player','uuid64:1:2',"
-        "'ll26.60.gamemode_destroy_block.v1',3,'minecraft:stone','','{}');"
-        "INSERT INTO events VALUES(2,1,'block_mined_result','player','uuid64:3:4',"
-        "'ll26.60.gamemode_destroy_block.v1',1,'minecraft:dirt','','{}');"
-        "INSERT INTO events VALUES(3,1,'player_travel_distance','player','uuid64:1:2',"
+        "INSERT INTO events VALUES(100,1,'player_travel_distance','player','uuid64:1:2',"
         "'ll26.60.poll_position_delta.v1',500,'walk','','{}');");
+    assert(insert_mined_fixture(db,"uuid64:1:2","minecraft:stone",3));
+    assert(insert_mined_fixture(db,"uuid64:3:4","minecraft:dirt",1));
+    exec(db,"ALTER TABLE events ADD COLUMN session_id TEXT DEFAULT '';");
     bedrock_insight::set_remote_api_database(path);
 
     char buffer[4096];
@@ -71,6 +71,20 @@ int main() {
     assert(contains(rank, "\"rank\":1"));
     assert(contains(rank, "\"name\":\"Alice\""));
     assert(contains(rank, "\"name\":\"Bob\""));
+    assert(contains(rank, "\"total_entries\":2"));
+    assert(contains(rank, "\"has_more\":false"));
+    assert(contains(rank, "\"collection_complete\":false"));
+    assert(getRankStatsPage("mined",0,1,buffer,sizeof(buffer))>0);
+    assert(contains(buffer,"\"total_entries\":2") && contains(buffer,"\"has_more\":true"));
+    assert(contains(buffer,"\"rank\":1") && !contains(buffer,"\"name\":\"Bob\""));
+    assert(getRankStatsPage("mined",1,1,buffer,sizeof(buffer))>0);
+    assert(contains(buffer,"\"rank\":2") && contains(buffer,"\"has_more\":false"));
+    assert(getRankStatsPage("mined",1000,100,buffer,sizeof(buffer))>0);
+    assert(contains(buffer,"\"total_entries\":2") && contains(buffer,"\"entries\":[]"));
+    assert(contains(buffer,"\"has_more\":false"));
+    assert(getRankStatsPage("crafted",0,1,buffer,sizeof(buffer))>0);
+    assert(contains(buffer,"\"total_entries\":0") && contains(buffer,"\"entries\":[]"));
+    assert(contains(buffer,"\"collection_complete\":false"));
 
     std::memset(buffer, 0, sizeof(buffer));
     assert(getPlayerStatsPage("Bob", "crafted", 0, 10, buffer, sizeof(buffer)) > 0);
@@ -88,6 +102,7 @@ int main() {
     assert(contains(std::string{buffer}, "\"ok\":true"));
     assert(contains(std::string{buffer}, "\"category\":\"custom:minecraft:walk_one_cm\""));
     assert(contains(std::string{buffer}, "\"value\":500"));
+    assert(contains(buffer,"\"total_entries\":1") && contains(buffer,"\"has_more\":false"));
 
     // Rejections: unknown category, bad paging, missing player, small buffer.
     insert_killer(db,"uuid64:1:2","minecraft:zombie");

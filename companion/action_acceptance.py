@@ -20,7 +20,7 @@ import time
 
 from .analytics import JST,period_bounds,valid_item_type
 from .death_source import DEATH_SOURCE,cause_number,valid_death_details
-from .jump_source import JUMP_SOURCE,valid_jump_details
+from .jump_source import JUMP_SOURCE,JUMP_EVENT_SOURCE,valid_jump_details
 from .kill_source import KILL_SOURCE,valid_kill_details
 from .mode_source import MODE_SOURCE,valid_mode_details
 from .pickup_source import PICKUP_SOURCE,valid_pickup_details
@@ -34,6 +34,7 @@ PROJECT=Path(__file__).resolve().parents[1]
 DROP_SOURCE='ll26.60.player_drop_returned_true.v1'
 SOURCES={DROP_SOURCE:'item_drop_result',DEATH_SOURCE:'player_death',MODE_SOURCE:'player_mode_observation',
          PICKUP_SOURCE:'item_pickup_delta',JUMP_SOURCE:'player_jump_impulse',
+         JUMP_EVENT_SOURCE:'player_jump_impulse',
          KILL_SOURCE:'direct_kill_observation',USE_SOURCE:'item_use_result',HURT_SOURCE:'item_hurt_slot_loss'}
 METRICS=('dropped_items','drop_actions','confirmed_deaths','sprint_starts','sprint_stops',
          'sneak_starts','sneak_stops','pickup_inventory_items','pickup_delta_actions','jump_impulses',

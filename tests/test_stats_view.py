@@ -98,9 +98,11 @@ class StatsViewTests(Fixture):
         for key in ('open_chest','damage_taken','damage_dealt'):
             r=self.view(key='minecraft:'+key)
             self.assertEqual(r['status'],'no_record',key);self.assertIsNone(r['totals']['value'])
-        for key in ('fish_caught','time_since_rest'):
+        for key in ('time_since_rest',):
             r=self.view(key='minecraft:'+key)
-            self.assertEqual(r['status'],'unsupported');self.assertIsNone(r['totals']['value'])
+            self.assertEqual(r['status'],'no_record');self.assertIsNone(r['totals']['value'])
+        fish=self.view(key='minecraft:fish_caught')
+        self.assertEqual(fish['status'],'no_record');self.assertIsNone(fish['totals']['value'])
         # target_hit now has a real post-origin projection, so an attempt-only DB
         # is "no_record", never a fake unsupported→counted success.
         target=self.view(key='minecraft:target_hit')
@@ -171,8 +173,10 @@ class StatsViewTests(Fixture):
                'absorbed_or_resisted_measured':False}
         self.row('player_damage_dealt','ll26.60.actor_hurt_real_damage.v1','minecraft:zombie',40,
                  secondary='cause:2',details=dealt)
-        self.assertEqual(self.view(key='minecraft:damage_taken')['totals']['value'],30)
-        self.assertEqual(self.view(key='minecraft:damage_dealt')['totals']['value'],40)
+        # Legacy notification amounts remain in the DB, but cannot substitute
+        # for the distinct HEALTH attribute-delta source.
+        self.assertIsNone(self.view(key='minecraft:damage_taken')['totals']['value'])
+        self.assertIsNone(self.view(key='minecraft:damage_dealt')['totals']['value'])
         trade={'hook':'ItemStackRequestActionHandler::_handleTransfer',
                'phase':'post_origin_trade_result_push','src_container':33,'dst_container':12,
                'transfer_amount':3,'net_result':0,'trade_commit_verified':True,

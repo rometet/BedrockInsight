@@ -20,7 +20,7 @@
 <section class="panel"><h2>保存された行動のランキング</h2><label>指標<select id="a-metric">
 <option value="dropped_items">投棄 true 戻り値・入口個数</option><option value="drop_actions">投棄 true 戻り値の回数</option>
 <option value="pickup_inventory_items">拾得処理中・主所持品の増加個数</option><option value="pickup_delta_actions">拾得処理中・所持数増加の観測回数</option>
-<option value="jump_impulses">ジャンプ処理の上向き加速観測</option>
+<option value="jump_impulses">ジャンプ通知（旧加速観測を含む）</option>
 <option value="use_return_actions">使用処理true応答・所持品照合済み</option><option value="use_inventory_loss">使用true応答中・主所持品の減少個数</option>
 <option value="hurt_slot_losses">耐久処理true応答・主所持品スロットの1個消失</option>
 <option value="mined_blocks">ブロック採掘の成功（種類別）</option><option value="mined_block_actions">ブロック採掘成功の観測回数</option>
@@ -41,7 +41,7 @@
 <section class="panel"><h2>拾得処理中の主所持品増加（上位100種類）</h2><ol id="a-pickups"></ol>
 <p id="a-pickup-definition" class="muted">入口個数や処理前通知を拾得個数にはしません。</p>
 <p id="a-pickup-observed" class="muted"></p></section>
-<section class="panel"><h2>ジャンプ処理の上向き加速観測</h2><p id="a-jump-count">認証後に表示</p>
+<section class="panel"><h2>ジャンプ通知（旧加速観測を含む）</h2><p id="a-jump-count">認証後に表示</p>
 <p id="a-jump-definition" class="muted">入力通知数や空中移動完了数とは区別します。</p>
 <p id="a-jump-observed" class="muted"></p></section>
 <section class="panel"><h2>直接攻撃の死亡フラグ成立・被害者種類別（上位100）</h2><ol id="a-kills"></ol>

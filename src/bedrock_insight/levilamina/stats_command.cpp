@@ -2,6 +2,9 @@
 #include "bedrock_insight/core/stats_catalog.hpp"
 #include "bedrock_insight/core/stats_reader.hpp"
 #include "bedrock_insight/core/stats_page.hpp"
+#include "bedrock_insight/core/type_labels.hpp"
+#include "bedrock_insight/core/block_record.hpp"
+#include "bedrock_insight/core/broken_record.hpp"
 
 #include "ll/api/command/CommandHandle.h"
 #include "ll/api/command/CommandRegistrar.h"
@@ -72,9 +75,11 @@ std::string summary_body(PlayerStatSummary const& summary, std::size_t page, std
             "対象外（異なる単位を合算しません）":"未計測／記録なし"))
         + "\n時間値は完結セッションのみの下限・50ms換算tick。未終了／オフライン時間は除外。\n\n";
     auto const window=stats_page(summary.row_count,page,limit);
+    if(summary.category==StatsCategory::Mined)body+=std::string(kBlockObservationScope)+"\n";
+    if(summary.category==StatsCategory::Broken)body+=std::string(kBrokenObservationScope)+"\n";
     std::size_t shown = 0;
     for (std::size_t i = 0; i < summary.rows.size() && shown < limit; ++i, ++shown) {
-        body += std::string(custom_key_label(summary.rows[i].key)) + ": "
+        body += stat_display_label(summary.rows[i].key) + ": "
             + std::to_string(summary.rows[i].value) + "\n";
     }
     if (summary.rows.empty()) body += "この分類の記録はありません（未計測を含みます）。\n";
@@ -130,7 +135,9 @@ void send_rank_form(Player& player,StatsCategory category,std::string const& key
     StatsReader reader{database_path()};std::vector<RankingEntry> rows;std::string error;
     page=std::min<std::size_t>(page,1000);
     bool const ok=reader.open(error) && reader.ranking(category,key,page*10,11,rows,error);
-    std::string body=std::string(category_info(category).label)+" / "+key+"\nページ "+std::to_string(page+1)+"\n";
+    std::string body=std::string(category_info(category).label)+" / "+stat_display_label(key)+"\nページ "+std::to_string(page+1)+"\n";
+    if(category==StatsCategory::Mined)body+=std::string(kBlockObservationScope)+"\n";
+    if(category==StatsCategory::Broken)body+=std::string(kBrokenObservationScope)+"\n";
     if(!ok)body+="このキーの確定統計は未対応、または読み取りに失敗しました。";
     else if(rows.empty())body+="正の記録なし（欠測を含む）。";
     else for(std::size_t i=0;i<rows.size() && i<10;++i)

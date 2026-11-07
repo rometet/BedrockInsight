@@ -1,5 +1,5 @@
 #include "bedrock_insight/levilamina/player_block.hpp"
-#include "bedrock_insight/core/block_observation.hpp"
+#include "bedrock_insight/core/block_record.hpp"
 #include "ll/api/memory/Hook.h"
 #include "mc/deps/ecs/WeakEntityRef.h"
 #include "mc/world/actor/player/Player.h"
@@ -55,6 +55,7 @@ std::int64_t now_ms() {
 struct MinedEntry {
     WeakEntityRef weak;
     Player const* identity;
+    Level const* level;
     BlockPos pos;
     int dimension;
     std::string before_type;
@@ -63,6 +64,7 @@ struct MinedEntry {
 struct PlacedEntry {
     WeakEntityRef weak;
     Player const* identity;
+    Level const* level;
     BlockPos pos;
     int dimension;
     std::string before_type;
@@ -80,11 +82,12 @@ LL_TYPE_INSTANCE_HOOK(BlockMinedHook,ll::memory::HookPriority::Lowest,GameMode,
         if(!state->active.load(std::memory_order_acquire) || !plausible_pos(pos))return {};
         auto& player=mPlayer; // exact pinned typed reference
         auto* checked=Player::tryGetFromEntity(player.getEntityContext(),false);
-        if(checked!=&player)return {};
+        if(checked!=&player || player.mRemoved)return {};
+        auto dimension=dimension_of(player);if(dimension< -1 || dimension>127)return {};
         auto const& uuid=player.getUuid();if(uuid.a==0 && uuid.b==0)return {};
         auto before=block_type_at(player,pos);
         if(!valid_item_type(before) || before=="minecraft:air")return {};
-        MinedEntry entry{player.getEntityContext().getWeakRef(),&player,pos,dimension_of(player),
+        MinedEntry entry{player.getEntityContext().getWeakRef(),&player,&player.getLevel(),pos,dimension,
             std::move(before),{}};
         entry.value.kind=EventKind::BlockMinedResult;
         entry.value.actor.kind=ActorKind::Player;
@@ -92,25 +95,20 @@ LL_TYPE_INSTANCE_HOOK(BlockMinedHook,ll::memory::HookPriority::Lowest,GameMode,
         entry.value.actor.display_name=player.getRealName();
         if(entry.value.actor.display_name.size()>256)entry.value.actor.display_name.resize(256);
         entry.value.primary_type=entry.before_type;
-        entry.value.cause="ll26.60.gamemode_destroy_block.v1";
         return entry;
     },[&]{return origin(pos,face);},[&](MinedEntry& entry) {
         if(nested_mined || !state->active.load(std::memory_order_acquire))return false;
         // Never read the old GameMode/Player after origin.
         auto player=entry.weak.tryUnwrap<Player>();
         if(!player || player.as_ptr()!=entry.identity)return false;
-        if(dimension_of(*player)!=entry.dimension)return false;
+        if(player->mRemoved || !block_frame_confirmed(false,true,&player->getLevel()==entry.level,entry.dimension,dimension_of(*player)))return false;
         std::string after;
         try {after=block_type_at(*player,entry.pos);} catch (...) {return false;}
-        if(!block_break_confirmed(entry.before_type,after))return false;
-        entry.value.amount=1;
-        entry.value.details_json="{\"hook\":\"GameMode::$destroyBlock\",\"phase\":\"return_true_post_state\",\"scope\":\"same_position_block_source\",\"before_type\":\""
-            +entry.before_type+"\",\"after_type\":\""+after+"\",\"dimension\":"+std::to_string(entry.dimension)
-            +",\"nested\":false,\"state_transition_verified\":true,\"world_save_verified\":false}";
+        auto value=block_transition_record(entry.value.actor,false,entry.before_type,after,{entry.pos.x,entry.pos.y,entry.pos.z,entry.dimension},-1,false,now_ms());
+        if(!value)return false;entry.value=std::move(*value);
         return true;
     },[&](MinedEntry entry) {
         if(!state->active.load(std::memory_order_acquire))return;
-        entry.value.occurred_at_ms=now_ms();
         state->sink(std::move(entry.value));
     });
 }
@@ -125,11 +123,12 @@ LL_TYPE_INSTANCE_HOOK(BlockPlacedHook,ll::memory::HookPriority::Lowest,GameMode,
         if(handSlot!=HandSlot::Mainhand && handSlot!=HandSlot::Offhand)return {};
         auto& player=mPlayer;
         auto* checked=Player::tryGetFromEntity(player.getEntityContext(),false);
-        if(checked!=&player)return {};
+        if(checked!=&player || player.mRemoved)return {};
+        auto dimension=dimension_of(player);if(dimension< -1 || dimension>127)return {};
         auto const& uuid=player.getUuid();if(uuid.a==0 && uuid.b==0)return {};
         auto before=block_type_at(player,pos);
         if(!valid_item_type(before))return {};
-        PlacedEntry entry{player.getEntityContext().getWeakRef(),&player,pos,dimension_of(player),
+        PlacedEntry entry{player.getEntityContext().getWeakRef(),&player,&player.getLevel(),pos,dimension,
             std::move(before),static_cast<int>(handSlot),isSimTick,{}};
         entry.value.kind=EventKind::BlockPlacedResult;
         entry.value.actor.kind=ActorKind::Player;
@@ -137,26 +136,19 @@ LL_TYPE_INSTANCE_HOOK(BlockPlacedHook,ll::memory::HookPriority::Lowest,GameMode,
         entry.value.actor.display_name=player.getRealName();
         if(entry.value.actor.display_name.size()>256)entry.value.actor.display_name.resize(256);
         entry.value.secondary_type=handSlot==HandSlot::Mainhand?"main_hand":"off_hand";
-        entry.value.cause="ll26.60.gamemode_build_block.v1";
         return entry;
     },[&]{return origin(pos,face,handSlot,isSimTick);},[&](PlacedEntry& entry) {
         if(nested_placed || !state->active.load(std::memory_order_acquire))return false;
         auto player=entry.weak.tryUnwrap<Player>();
         if(!player || player.as_ptr()!=entry.identity)return false;
-        if(dimension_of(*player)!=entry.dimension)return false;
+        if(player->mRemoved || !block_frame_confirmed(false,true,&player->getLevel()==entry.level,entry.dimension,dimension_of(*player)))return false;
         std::string after;
         try {after=block_type_at(*player,entry.pos);} catch (...) {return false;}
-        auto placed=placed_block_type(entry.before_type,after);if(!placed)return false;
-        entry.value.primary_type=*placed;
-        entry.value.amount=1;
-        entry.value.details_json="{\"hook\":\"GameMode::$buildBlock\",\"phase\":\"return_true_post_state\",\"scope\":\"same_position_block_source\",\"before_type\":\""
-            +entry.before_type+"\",\"after_type\":\""+after+"\",\"dimension\":"+std::to_string(entry.dimension)
-            +",\"hand\":"+std::to_string(entry.hand)+",\"sim_tick\":"+(entry.sim_tick?"true":"false")
-            +",\"nested\":false,\"state_transition_verified\":true,\"world_save_verified\":false}";
+        auto value=block_transition_record(entry.value.actor,true,entry.before_type,after,{entry.pos.x,entry.pos.y,entry.pos.z,entry.dimension},entry.hand,entry.sim_tick,now_ms());
+        if(!value)return false;entry.value=std::move(*value);
         return true;
     },[&](PlacedEntry entry) {
         if(!state->active.load(std::memory_order_acquire))return;
-        entry.value.occurred_at_ms=now_ms();
         state->sink(std::move(entry.value));
     });
 }

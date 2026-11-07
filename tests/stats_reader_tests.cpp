@@ -3,6 +3,8 @@
 #include "bedrock_insight/core/stats_reader.hpp"
 #include "bedrock_insight/core/stats_page.hpp"
 #include "killed_by_fixture.hpp"
+#include "block_record_fixture.hpp"
+#include "broken_record_fixture.hpp"
 
 #include <sqlite3.h>
 
@@ -27,6 +29,14 @@ void exec(sqlite3* db, char const* sql) {
 }
 void event(sqlite3* db, char const* kind, char const* cause, char const* primary,
     char const* secondary, long long amount, char const* player) {
+    if(std::string_view(kind)=="item_broken_result" && std::string_view(cause)=="ll26.60.durability_item_destroyed.v1") {
+        if(amount!=1 || std::string_view(secondary)!="" || !insert_broken_fixture(db,player,primary))throw std::runtime_error("invalid broken fixture");
+        return;
+    }
+    if(std::string_view(kind)=="block_mined_result" && std::string_view(cause)=="ll26.60.gamemode_destroy_block.v1") {
+        if(amount!=1 || std::string_view(secondary)!="" || !insert_mined_fixture(db,player,primary,1,true))throw std::runtime_error("invalid mined fixture");
+        return;
+    }
     char sql[1024];
     std::snprintf(sql, sizeof(sql),
         "INSERT INTO events(occurred_at_ms,event_kind,actor_kind,actor_id,cause,amount,primary_type,"
@@ -52,7 +62,7 @@ int main() {
     exec(db,
         "CREATE TABLE players(player_id TEXT PRIMARY KEY,last_name TEXT,first_seen_ms INTEGER,last_seen_ms INTEGER);"
         "CREATE TABLE events(event_id INTEGER PRIMARY KEY,occurred_at_ms INTEGER,event_kind TEXT,actor_kind TEXT,"
-        "actor_id TEXT,cause TEXT,amount INTEGER,primary_type TEXT,secondary_type TEXT,details_json TEXT);"
+        "actor_id TEXT,cause TEXT,amount INTEGER,primary_type TEXT,secondary_type TEXT,details_json TEXT,session_id TEXT DEFAULT '');"
         "CREATE TABLE sessions(session_id TEXT PRIMARY KEY,player_id TEXT,started_at_ms INTEGER,ended_at_ms INTEGER,"
         "duration_ms INTEGER);");
     exec(db,
@@ -73,6 +83,10 @@ int main() {
     event(db, "item_use_result", "ll26.60.item_hurt_used.v1", "minecraft:iron_pickaxe", "durability", 1,
         "uuid64:1:2");
     event(db, "item_use_result", "ll26.60.fake_use_attempt.v1", "minecraft:snowball", "", 1, "uuid64:1:2");
+    // The real 26.60 jump producer now follows upstream PlayerJumpEvent;
+    // attempts and unrelated cause labels must not appear as CUSTOM jumps.
+    event(db, "player_jump_impulse", "ll26.60.player_jump_event.v1", "minecraft:player", "", 1, "uuid64:1:2");
+    event(db, "player_jump_impulse", "ll26.60.fake_jump_attempt.v1", "minecraft:player", "", 1, "uuid64:1:2");
     event(db, "player_travel_distance", "ll26.60.poll_position_delta.v1", "walk", "", 500, "uuid64:1:2");
     event(db, "player_travel_distance", "ll26.60.poll_position_delta.v1", "walk_on_water", "", 250, "uuid64:1:2");
     event(db, "player_travel_distance", "ll26.60.poll_position_delta.v1", "walk_under_water", "", 350,
@@ -119,10 +133,10 @@ int main() {
         "minecraft:enchant_item", "enchantment", 1, "uuid64:1:2");
     event(db, "item_broken_result", "ll26.60.durability_item_destroyed.v1", "minecraft:iron_pickaxe", "", 1,
         "uuid64:1:2");
-    // Two persisted busy-tick windows sum to the shared world time (real ticks).
+    // Busy-tick windows are sampled counts, NOT the Level's world tick ID.
     event(db, "server_tick", "ll26.60.busytick.v1", "", "", 600, "uuid64:1:2");
     event(db, "server_tick", "ll26.60.busytick.v1", "", "", 400, "uuid64:1:2");
-    // Interval telemetry must NOT be added on top of the busy-tick world time.
+    // Neither telemetry provenance can synthesize a world tick snapshot.
     event(db, "server_tick", "ll26.60.interval.v1", "", "", 999, "uuid64:1:2");
     exec(db, "INSERT INTO sessions VALUES('s1','uuid64:1:2',0,10000,10000);");
 
@@ -155,7 +169,7 @@ int main() {
     bool has_walk = false, has_play = false, has_drop = false, has_chest = false, has_damage = false;
     bool has_since_death = false, has_sleep = false, has_sneak = false, has_dealt = false;
     bool has_talked = false, has_bred = false, has_target = false, has_barrel = false, has_traded = false;
-    bool has_enchant = false, has_record = false;
+    bool has_enchant = false, has_record = false, has_jump_event = false;
     bool has_on_water = false, has_under_water = false, has_world_time = false, has_cake = false;
     for (auto const& row : custom.rows) {
         if (row.key == "minecraft:eat_cake_slice") { has_cake = row.value == 1; }
@@ -165,23 +179,24 @@ int main() {
         if (row.key == "minecraft:traded_with_villager") { has_traded = row.value == 2; }
         if (row.key == "minecraft:play_record") { has_record = row.value == 1; }
         if (row.key == "minecraft:enchant_item") { has_enchant = row.value == 1; }
+        if (row.key == "minecraft:jump") { has_jump_event = row.value == 1; }
         if (row.key == "minecraft:walk_on_water_one_cm") { has_on_water = row.value == 250; }
         if (row.key == "minecraft:walk_under_water_one_cm") { has_under_water = row.value == 350; }
-        if (row.key == "minecraft:total_world_time") { has_world_time = row.value == 1000; }
+        if (row.key == "minecraft:total_world_time") { has_world_time = true; }
         if (row.key == "minecraft:walk_one_cm") { has_walk = row.value == 500; }
         if (row.key == "minecraft:play_time") { has_play = row.value == 200; }
         if (row.key == "minecraft:time_since_death") { has_since_death = row.value == 200; }
         if (row.key == "minecraft:drop") { has_drop = row.value == 4; }
         if (row.key == "minecraft:open_chest") { has_chest = true; }
         if (row.key == "minecraft:open_barrel") { has_barrel = row.value == 1; }
-        if (row.key == "minecraft:damage_taken") { has_damage = row.value == 20; }
-        if (row.key == "minecraft:damage_dealt") { has_dealt = row.value == 30; } // real, not attack actions
+        if (row.key == "minecraft:damage_taken") { has_damage = true; }
+        if (row.key == "minecraft:damage_dealt") { has_dealt = true; }
         if (row.key == "minecraft:sleep_in_bed") { has_sleep = row.value == 1; }
         if (row.key == "minecraft:sneak_time") { has_sneak = row.value == 120; }
     }
-    assert(has_walk && has_play && has_since_death && has_drop && !has_chest && has_barrel && has_damage
-        && has_dealt && has_sleep && has_sneak && has_talked && has_bred && has_target && has_traded
-        && has_on_water && has_under_water && has_world_time && has_cake && has_enchant && has_record);
+    assert(has_walk && has_play && has_since_death && has_drop && !has_chest && has_barrel && !has_damage
+        && !has_dealt && has_sleep && has_sneak && has_talked && has_bred && has_target && has_traded
+        && has_on_water && has_under_water && !has_world_time && has_cake && has_enchant && has_record && has_jump_event);
     assert(!custom.total_available && custom.total==0); // not cm + counts + damage + ticks
     // World time is a shared world value, never rankable per player.
     std::vector<RankingEntry> world_rank;
@@ -223,9 +238,9 @@ int main() {
     assert(reader.ranking(StatsCategory::Custom,"minecraft:eat_cake_slice",0,10,custom_rank,error));
     assert(custom_rank.size()==1 && custom_rank[0].value==1);
     assert(reader.ranking(StatsCategory::Custom,"minecraft:damage_taken",0,10,custom_rank,error));
-    assert(custom_rank.size()==1 && custom_rank[0].value==20);
+    assert(custom_rank.empty()); // historical pre-origin amounts are not HP changes
     assert(reader.ranking(StatsCategory::Custom,"minecraft:damage_dealt",0,10,custom_rank,error));
-    assert(custom_rank.size()==1 && custom_rank[0].value==30 && custom_rank[0].display_name=="Alice");
+    assert(custom_rank.empty());
     assert(reader.ranking(StatsCategory::Custom, "minecraft:walk_one_cm", 0, 10, custom_rank, error));
     assert(custom_rank.size() == 1 && custom_rank[0].display_name == "Alice" && custom_rank[0].value == 500);
     assert(reader.ranking(StatsCategory::Custom, "minecraft:walk_on_water_one_cm", 0, 10, custom_rank, error));
@@ -275,6 +290,16 @@ int main() {
     assert(custom_rank.size()==2 && custom_rank[0].display_name=="Bob" && custom_rank[1].value==580);
     for(auto limit:{0u,101u})assert(!reader.ranking(StatsCategory::Mined,{},0,limit,custom_rank,error));
     assert(!reader.ranking(StatsCategory::Mined,{},100001,1,custom_rank,error));
+    StatRankingPage ranking_page;
+    assert(reader.ranking_page(StatsCategory::Mined,{},0,1,ranking_page,error));
+    assert(ranking_page.rows.size()==1 && ranking_page.total_entries==2 && ranking_page.has_more());
+    assert(ranking_page.offset==0 && ranking_page.limit==1);
+    assert(reader.ranking_page(StatsCategory::Mined,{},1,1,ranking_page,error));
+    assert(ranking_page.rows.size()==1 && ranking_page.total_entries==2 && !ranking_page.has_more());
+    assert(reader.ranking_page(StatsCategory::Mined,{},100000,100,ranking_page,error));
+    assert(ranking_page.rows.empty() && ranking_page.total_entries==2 && !ranking_page.has_more());
+    assert(!reader.ranking_page(StatsCategory::Custom,{},0,1,ranking_page,error));
+    assert(ranking_page.rows.empty() && ranking_page.total_entries==0 && !ranking_page.has_more());
     assert(!reader.player_summary("absent",StatsCategory::Custom,custom,error));
 
     // Numeric causes and old mixed-format death records are NOT killed_by.

@@ -54,6 +54,8 @@ enum class EventKind : std::uint8_t {
     ItemBrokenResult,
     // Resolved source actor type for a Player dead-flag transition; NOT cause:N.
     PlayerKilledByEntity,
+    // Opt-in raw shield investigation. Never a successful shield statistic.
+    PlayerShieldEvidence,
 };
 
 enum class ActorKind : std::uint8_t {

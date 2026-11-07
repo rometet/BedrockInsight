@@ -4,8 +4,8 @@ CATEGORIES = (
     ('custom', 'カスタム統計', '項目別'),
     ('mined', '採掘ブロックの状態変化', '回'),
     ('broken', '耐久処理での破損観測', '回'),
-    ('crafted', 'クラフト要求の出力申告', '個'),
-    ('used', '使用処理true・所持品照合', '回'),
+    ('crafted', 'クラフト出力・取り出しの観測', '個'),
+    ('used', '使用処理の限定観測', '回'),
     ('picked_up', '拾得中の主所持品増加', '個'),
     ('dropped', '投棄true・入口個数', '個'),
     ('killed', '倒したエンティティの観測', '回'),
@@ -23,13 +23,13 @@ CUSTOM = (
     ('eat_cake_slice', 'ケーキを食べた回数', '回'),
     ('fill_cauldron', '大釜を満たした回数', '回'),
     ('open_chest', 'チェストを開いた回数', '回'),
-    ('damage_absorbed', '吸収したダメージ', '1/10単位'),
+    ('damage_absorbed', '吸収属性の減少観測（丸め）', '1/10HP'),
     ('damage_blocked_by_shield', '盾で防いだダメージ', '1/10単位'),
-    ('damage_dealt', '与えたダメージ', '1/10単位'),
-    ('damage_dealt_absorbed', '与えた攻撃の吸収分', '1/10単位'),
-    ('damage_dealt_resisted', '与えた攻撃の耐性軽減分', '1/10単位'),
-    ('damage_resisted', '耐性で軽減したダメージ', '1/10単位'),
-    ('damage_taken', '受けたダメージ', '1/10単位'),
+    ('damage_dealt', '加害先のHP属性減少観測（丸め）', '1/10HP'),
+    ('damage_dealt_absorbed', '加害先の吸収属性減少観測（丸め）', '1/10HP'),
+    ('damage_dealt_resisted', '加害先の耐性量（式・丸め）', '1/10HP'),
+    ('damage_resisted', '自身の耐性量（式・丸め）', '1/10HP'),
+    ('damage_taken', '自身のHP属性減少観測（丸め）', '1/10HP'),
     ('inspect_dispenser', 'ディスペンサーを確認', '回'),
     ('nautilus_one_cm', '騎乗距離（nautilus）', 'cm'),
     ('happy_ghast_one_cm', '騎乗距離（happy_ghast）', 'cm'),
@@ -50,7 +50,7 @@ CUSTOM = (
     ('walk_under_water_one_cm', '水中歩行距離', 'cm'),
     ('inspect_dropper', 'ドロッパーを確認', '回'),
     ('open_enderchest', 'エンダーチェストを開いた回数', '回'),
-    ('fish_caught', '釣り上げた魚', '回'),
+    ('fish_caught', '水生Mobのバケツ捕獲観測', '回'),
     ('leave_game', '退出イベント', '回'),
     ('inspect_hopper', 'ホッパーを確認', '回'),
     ('interact_with_anvil', '金床の使用', '回'),
@@ -69,7 +69,7 @@ CUSTOM = (
     ('interact_with_stonecutter', '石切台の使用', '回'),
     ('drop', '投棄の入口個数', '個'),
     ('enchant_item', 'エンチャントした回数', '回'),
-    ('jump', 'ジャンプ処理の上向き加速', '回'),
+    ('jump', 'ジャンプ通知（旧加速観測を含む）', '回'),
     ('mob_kills', 'Mob死亡フラグ・攻撃者帰属', '回'),
     ('play_record', 'レコードを再生した回数', '回'),
     ('play_noteblock', '音符ブロックを鳴らした回数', '回'),
@@ -77,36 +77,29 @@ CUSTOM = (
     ('deaths', 'プレイヤー死亡フラグ成立', '回'),
     ('pot_flower', '植木鉢へ植えた回数', '回'),
     ('player_kills', 'プレイヤー死亡・攻撃者帰属', '回'),
-    ('raid_trigger', '襲撃を発生させた回数', '回'),
-    ('raid_win', '襲撃に勝利した回数', '回'),
+    ('raid_trigger', '襲撃前兆効果の付与観測', '回'),
+    ('raid_win', '村の英雄効果の付与観測', '回'),
     ('clean_shulker_box', 'シュルカーボックスを洗った回数', '回'),
     ('open_shulker_box', 'シュルカーボックスを開いた回数', '回'),
     ('time_since_death', '死亡後の完結プレイ時間下限', '換算tick'),
-    ('time_since_rest', '休息後の時間', 'tick'),
+    ('time_since_rest', '睡眠観測後のPlayer tick（最終保存値）', 'tick'),
     ('sneak_time', 'スニーク通知間の時間', '換算tick'),
     ('talked_to_villager', '村人の取引画面処理', '回'),
     ('target_hit', '的への命中回数', '回'),
     ('play_time', '完結プレイ時間の下限', '換算tick'),
-    ('total_world_time', 'ワールド内の総時間', 'tick'),
+    ('total_world_time', 'ワールド共有tick（最終観測値）', 'tick'),
     ('sleep_in_bed', '睡眠フラグの成立観測', '回'),
     ('traded_with_villager', '村人との取引成立', '回'),
     ('trigger_trapped_chest', 'トラップチェストの作動', '回'),
     ('use_cauldron', '大釜の使用', '回'),
 )
 
-TYPE_LABELS = {
-    'minecraft:stone': '石', 'minecraft:dirt': '土', 'minecraft:grass_block': '草ブロック',
-    'minecraft:air': '空気', 'minecraft:cobblestone': '丸石', 'minecraft:oak_log': 'オークの原木',
-    'minecraft:stick': '棒', 'minecraft:torch': 'たいまつ', 'minecraft:crafting_table': '作業台',
-    'minecraft:chest': 'チェスト', 'minecraft:barrel': '樽', 'minecraft:iron_pickaxe': '鉄のツルハシ',
-    'minecraft:diamond_pickaxe': 'ダイヤモンドのツルハシ', 'minecraft:iron_sword': '鉄の剣',
-    'minecraft:player': 'プレイヤー', 'minecraft:zombie': 'ゾンビ', 'minecraft:skeleton': 'スケルトン',
-    'minecraft:creeper': 'クリーパー', 'minecraft:cow': 'ウシ', 'minecraft:pig': 'ブタ',
-    'minecraft:sheep': 'ヒツジ', 'minecraft:villager': '村人', 'minecraft:villager_v2': '村人',
-    'minecraft:wandering_trader': '行商人',
-}
-TYPE_LABELS.update({'minecraft:'+key: label for key, label, _ in CUSTOM})
+from .type_labels import DEFAULT_PATH,load_type_labels
+BASE_TYPE_LABELS=load_type_labels(DEFAULT_PATH)
+CUSTOM_LABELS={'minecraft:'+key:label for key,label,_ in CUSTOM}
+TYPE_LABELS=dict(BASE_TYPE_LABELS)|CUSTOM_LABELS
 
 
-def type_label(value):
-    return TYPE_LABELS.get(value, value)
+def type_label(value,labels=None):
+    if value in CUSTOM_LABELS:return CUSTOM_LABELS[value]
+    return (BASE_TYPE_LABELS if labels is None else labels).get(value,value)

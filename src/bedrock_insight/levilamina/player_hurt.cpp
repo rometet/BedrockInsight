@@ -1,6 +1,7 @@
 #include "bedrock_insight/levilamina/player_hurt.hpp"
 #include "bedrock_insight/core/drop_observation.hpp"
 #include "bedrock_insight/core/hurt_observation.hpp"
+#include "bedrock_insight/core/broken_record.hpp"
 #include "bedrock_insight/core/item_observation.hpp"
 #include "ll/api/memory/Hook.h"
 #include "mc/deps/ecs/WeakEntityRef.h"
@@ -8,6 +9,7 @@
 #include "mc/world/actor/player/Inventory.h"
 #include "mc/world/item/ItemStack.h"
 #include "mc/world/item/Item.h"
+#include "mc/deps/shared_types/legacy/actor/ArmorSlot.h"
 #include <atomic>
 #include <chrono>
 #include <mutex>
@@ -36,18 +38,17 @@ std::int64_t now_ms() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
-// Pre-origin snapshot. The strict break proof re-reads the inventory slot after
-// origin; the upstream `used` counter only needs the item's own durability
-// classification, which must be copied before the stack can be destroyed.
+// Copy before origin; never dereference this stack or the owner pointer after
+// origin. Equipment accessors are the pinned public LL functions, not offsets.
 struct HurtEntry {
     WeakEntityRef weak;
     Player const* player_identity;
     Inventory const* inventory;
     ItemStackBase const* item_identity;
-    int slots,slot;
-    short max_damage;
-    short damage_before;
-    AnalyticsEvent value;
+    Level const* level;
+    BrokenObservation observation;
+    Actor actor;
+    std::string type;
 };
 struct UsedEntry {
     WeakEntityRef weak;
@@ -58,6 +59,7 @@ struct UsedEntry {
     short max_damage=0;
     short damage_before=0;
     std::int8_t dimension=0;
+    Level const* level=nullptr;
 };
 LL_TYPE_INSTANCE_HOOK(HurtSlotHook,ll::memory::HookPriority::Lowest,ItemStackBase,
     &ItemStackBase::hurtAndBreak,bool,int deltaDamage,::Actor* owner) {
@@ -71,7 +73,8 @@ LL_TYPE_INSTANCE_HOOK(HurtSlotHook,ll::memory::HookPriority::Lowest,ItemStackBas
     try {
         if(owner && deltaDamage>0) {
             auto* player=Player::tryGetFromEntity(owner->getEntityContext(),false);
-            if(player && static_cast<::Actor*>(player)==owner) {
+            if(player && static_cast<::Actor*>(player)==owner && !player->mRemoved
+                && static_cast<int>(player->getDimensionId())>=-1 && static_cast<int>(player->getDimensionId())<=127) {
                 auto const& uuid=player->getUuid();
                 if(uuid.a!=0 || uuid.b!=0) {
                     auto type=getTypeName();
@@ -84,32 +87,34 @@ LL_TYPE_INSTANCE_HOOK(HurtSlotHook,ll::memory::HookPriority::Lowest,ItemStackBas
                         used=UsedEntry{player->getEntityContext().getWeakRef(),player,std::move(type),
                             damageable,armor,static_cast<short>(max_damage),
                             static_cast<short>(damage_before),
-                            static_cast<std::int8_t>(static_cast<int>(player->getDimensionId()))};
+                            static_cast<std::int8_t>(static_cast<int>(player->getDimensionId())),&player->getLevel()};
                     }
-                    // Strict break snapshot: only a single-unit damageable item
-                    // resolved to a slot of the same main inventory can be proven.
+                    // Only one exact owned stack location may match. Copies,
+                    // ambiguous aliases, invalid counts and non-threshold calls
+                    // are not converted into a broken-item observation.
                     if(mCount==1 && damageable && max_damage>1 && damage_before>=0
                         && damage_before<=max_damage
                         && static_cast<long long>(damage_before)+deltaDamage>=static_cast<long long>(max_damage)) {
                         auto const& inventory=player->getInventory();
                         auto slots=inventory.getContainerSize();
                         if(slots>=1 && slots<=128) {
-                            int slot=-1;
+                            BrokenObservation observed;int matches=0;
+                            auto match=[&](ItemStack const& stack,BrokenLocation location,int slot,int count){
+                                if(static_cast<ItemStackBase const*>(&stack)==this){
+                                    ++matches;observed={location,count,slot,max_damage,damage_before,deltaDamage,1,0,
+                                        static_cast<int>(player->getDimensionId())};
+                                }
+                            };
                             for(int i=0;i<slots;++i) {
-                                if(static_cast<ItemStackBase const*>(&inventory.getItem(i))==this){slot=i;break;}
+                                match(inventory.getItem(i),BrokenLocation::Inventory,i,slots);
                             }
-                            if(slot>=0) {
-                                HurtEntry entry{player->getEntityContext().getWeakRef(),player,&inventory,this,
-                                    slots,slot,static_cast<short>(max_damage),
-                                    static_cast<short>(damage_before),{}};
-                                entry.value.kind=EventKind::ItemBrokenResult;
-                                entry.value.actor.kind=ActorKind::Player;
-                                entry.value.actor.id="uuid64:"+std::to_string(uuid.a)+":"+std::to_string(uuid.b);
-                                entry.value.actor.display_name=player->getRealName();
-                                if(entry.value.actor.display_name.size()>256)entry.value.actor.display_name.resize(256);
-                                entry.value.primary_type=getTypeName();
-                                entry.value.cause="ll26.60.durability_item_destroyed.v1";
-                                broken=std::move(entry);
+                            match(player->getOffhandSlot(),BrokenLocation::Offhand,0,1);
+                            for(int i=0;i<4;++i)match(player->getArmor(static_cast<SharedTypes::Legacy::ArmorSlot>(i)),BrokenLocation::Armor,i,4);
+                            if(matches==1 && broken_slot_valid(observed)) {
+                                Actor actor{ActorKind::Player,"uuid64:"+std::to_string(uuid.a)+":"+std::to_string(uuid.b),player->getRealName()};
+                                if(actor.display_name.size()>256)actor.display_name.resize(256);
+                                broken=HurtEntry{player->getEntityContext().getWeakRef(),player,&inventory,this,
+                                    &player->getLevel(),observed,std::move(actor),getTypeName()};
                             }
                         }
                     }
@@ -124,6 +129,8 @@ LL_TYPE_INSTANCE_HOOK(HurtSlotHook,ll::memory::HookPriority::Lowest,ItemStackBas
         try {
             auto player=used->weak.tryUnwrap<Player>();
             if(player && player.as_ptr()==used->player_identity
+                && !player->mRemoved && &player->getLevel()==used->level
+                && static_cast<int>(player->getDimensionId())==used->dimension
                 && item_hurt_counts_as_used(true,used->damageable,used->armor,deltaDamage)
                 && state->active.load(std::memory_order_acquire)) {
                 AnalyticsEvent value;
@@ -152,25 +159,21 @@ LL_TYPE_INSTANCE_HOOK(HurtSlotHook,ll::memory::HookPriority::Lowest,ItemStackBas
     if(!broken || !state->active.load(std::memory_order_acquire))return accepted;
     try {
         auto player=broken->weak.tryUnwrap<Player>();
-        if(!player || player.as_ptr()!=broken->player_identity)return accepted;
-        auto const& inventory=player->getInventory();
-        if(&inventory!=broken->inventory)return accepted;
-        auto slots=inventory.getContainerSize();
-        if(slots!=broken->slots)return accepted;
-        auto const& after=inventory.getItem(broken->slot);
-        if(!hurt_slot_became_empty(deltaDamage,1,after.mCount,broken->slots,slots,broken->slot,
-            true,static_cast<ItemStackBase const*>(&after)==broken->item_identity))return accepted;
-        auto& entry=*broken;
-        entry.value.amount=1;
-        entry.value.occurred_at_ms=now_ms();
-        entry.value.position={0,0,0,static_cast<std::int8_t>(static_cast<int>(player->getDimensionId()))};
-        entry.value.details_json="{\"hook\":\"ItemStackBase::hurtAndBreak\",\"phase\":\"return_true_item_destroyed\",\"scope\":\"main_inventory_same_slot\",\"delta_damage\":"
-            +std::to_string(deltaDamage)+",\"slots\":"+std::to_string(slots)+",\"slot\":"+std::to_string(entry.slot)
-            +",\"max_damage\":"+std::to_string(entry.max_damage)
-            +",\"damage_before\":"+std::to_string(entry.damage_before)
-            +",\"is_damageable\":true,\"entry_units\":1,\"after_units\":0,\"nested\":false,"
-            "\"durability_path\":true,\"durability_exhausted_verified\":true,\"max_damage_value_exceeded_read\":true}";
-        state->sink(std::move(entry.value));
+        if(!player || player.as_ptr()!=broken->player_identity || player->mRemoved)return accepted;
+        if(!broken_frame_valid(false,true,&player->getLevel()==broken->level,broken->observation.dimension,
+            static_cast<int>(player->getDimensionId())))return accepted;
+        auto observed=broken->observation;ItemStack const* after=nullptr;
+        switch(observed.location) {
+        case BrokenLocation::Inventory:{auto const& inventory=player->getInventory();
+            if(&inventory!=broken->inventory || inventory.getContainerSize()!=observed.slots)return accepted;
+            after=&inventory.getItem(observed.slot);break;}
+        case BrokenLocation::Offhand:after=&player->getOffhandSlot();break;
+        case BrokenLocation::Armor:after=&player->getArmor(static_cast<SharedTypes::Legacy::ArmorSlot>(observed.slot));break;
+        }
+        if(!after || static_cast<ItemStackBase const*>(after)!=broken->item_identity)return accepted;
+        observed.after_units=after->mCount;
+        auto value=broken_record(broken->actor,broken->type,observed,now_ms());
+        if(value && state->active.load(std::memory_order_acquire))state->sink(std::move(*value));
     } catch (...) {}
     return accepted;
 }
